@@ -76,6 +76,9 @@ void init_scr_del_flag(lv_ui *ui)
 {
 
     ui->main_del = true;
+    ui->rance_del = true;
+    ui->detail_del = true;
+    ui->setting_del = true;
 }
 
 void setup_ui(lv_ui *ui)
