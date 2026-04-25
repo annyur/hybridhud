@@ -43,6 +43,7 @@ typedef struct
 	lv_obj_t *main_label_4;
 	lv_obj_t *main_label_5;
 	lv_obj_t *main_label_6;
+	lv_obj_t *main_label_7;
 }lv_ui;
 
 typedef void (*ui_setup_scr_t)(lv_ui * ui);
