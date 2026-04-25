@@ -1,7 +1,6 @@
 /*
  * hybridhud.ino
- * 4屏手势导航 + 串口调试
- * main | 左滑→rance | 右滑→detail | 下滑→setting | 上滑→返回
+ * 4屏手势导航 + 动画 + 防连切 + Setting底部上滑关闭
  */
 
 #include <lvgl.h>
@@ -30,9 +29,6 @@
 #define TP_INT      11
 #define TP_RESET    40
 
-/* 调试开关：验证手势时打开，正常后注释 */
-#define DEBUG_GESTURE 1
-
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
     LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
 Arduino_GFX *gfx = new Arduino_CO5300(
@@ -53,7 +49,7 @@ unsigned long last_temp_ms = 0;
 char time_buf[6];
 char temp_buf[16];
 
-/* ==================== 页面枚举与状态 ==================== */
+/* ==================== 页面枚举 ==================== */
 typedef enum {
     SCREEN_MAIN = 0,
     SCREEN_RANCE,
@@ -64,14 +60,19 @@ typedef enum {
 static screen_id_t current_screen = SCREEN_MAIN;
 static screen_id_t prev_screen    = SCREEN_MAIN;
 
-/* ==================== 独立手势状态机 ==================== */
+/* ==================== 手势状态 ==================== */
 #define GS_IDLE     0
 #define GS_PRESSED  1
+static int gs_state = GS_IDLE;
+static int16_t gs_sx, gs_sy, gs_ex, gs_ey, gs_px, gs_py;
 
-static int  gs_state = GS_IDLE;
-static int16_t gs_sx, gs_sy, gs_ex, gs_ey;
-static int16_t gs_prev_x, gs_prev_y;   // 用于实时跟踪
-static const int16_t GESTURE_THRESH = 30;  // 阈值30px，小屏更灵敏
+/* 动画锁定：切换期间忽略新手势 */
+static bool is_switching = false;
+static unsigned long switch_unlock_ms = 0;
+#define SWITCH_LOCK_TIME  400   // 400ms 内禁止再次切换
+
+/* Setting 关闭区域：只有从屏幕底部 40% 上滑才关闭 */
+#define SETTING_CLOSE_Y_THRESHOLD  280   // y > 280 视为底部区域
 
 /* ==================== 显示刷新 ==================== */
 void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p)
@@ -86,11 +87,11 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
     lv_disp_flush_ready(disp);
 }
 
-/* ==================== 触摸回调（给 LVGL 用） ==================== */
+/* ==================== 触摸回调 ==================== */
 void my_touchpad_read(lv_indev_drv_t *indev, lv_indev_data_t *data)
 {
-    uint8_t touched = touch.getPoint(touchX, touchY, touch.getSupportTouchPoint());
-    if (touched > 0) {
+    uint8_t n = touch.getPoint(touchX, touchY, touch.getSupportTouchPoint());
+    if (n > 0) {
         data->point.x = touchX[0];
         data->point.y = touchY[0];
         data->state   = LV_INDEV_STATE_PRESSED;
@@ -99,65 +100,80 @@ void my_touchpad_read(lv_indev_drv_t *indev, lv_indev_data_t *data)
     }
 }
 
-/* ==================== 手势处理 ==================== */
-void do_page_switch(int16_t dx, int16_t dy)
+/* ==================== 带动画的页面切换 ==================== */
+void switch_screen(screen_id_t target_id, lv_scr_load_anim_t anim)
 {
+    if (is_switching) return;   // 动画期间锁定
+
     lv_obj_t *target = NULL;
-    lv_scr_load_anim_t anim = LV_SCR_LOAD_ANIM_NONE;
+    switch (target_id) {
+        case SCREEN_MAIN:    target = guider_ui.main;    break;
+        case SCREEN_RANCE:   target = guider_ui.rance;   break;
+        case SCREEN_DETAIL:  target = guider_ui.detail;  break;
+        case SCREEN_SETTING: target = guider_ui.setting; break;
+    }
+    if (target == NULL || target == lv_scr_act()) return;
+
+    /* 执行动画切换 */
+    lv_scr_load_anim(target, anim, 30, 0, false);
+    current_screen = target_id;
+
+    /* 锁定 400ms，防止连续切换 */
+    is_switching = true;
+    switch_unlock_ms = millis() + SWITCH_LOCK_TIME;
+}
+
+/* ==================== 手势处理 ==================== */
+void process_gesture(int16_t dx, int16_t dy)
+{
+    /* 先检查解锁 */
+    if (is_switching && millis() >= switch_unlock_ms) {
+        is_switching = false;
+    }
+    if (is_switching) return;
+
+    const int16_t THRESH = 30;
+
+    /* 无效滑动 */
+    if (abs(dx) < THRESH && abs(dy) < THRESH) return;
 
     if (abs(dx) > abs(dy)) {
-        /* 水平滑动 */
-        if (dx < 0) { // 左滑
+        /* ========== 水平滑动 ========== */
+        if (dx < 0) {   // 左滑 → 新页面从右边进入
             if (current_screen == SCREEN_MAIN) {
-                target = guider_ui.rance;  anim = LV_SCR_LOAD_ANIM_MOVE_LEFT;
+                switch_screen(SCREEN_RANCE, LV_SCR_LOAD_ANIM_MOVE_LEFT);
             } else if (current_screen == SCREEN_DETAIL) {
-                target = guider_ui.main;   anim = LV_SCR_LOAD_ANIM_MOVE_LEFT;
+                switch_screen(SCREEN_MAIN, LV_SCR_LOAD_ANIM_MOVE_LEFT);
             }
-        } else { // 右滑
+        } else {        // 右滑 → 新页面从左边进入
             if (current_screen == SCREEN_MAIN) {
-                target = guider_ui.detail; anim = LV_SCR_LOAD_ANIM_MOVE_RIGHT;
+                switch_screen(SCREEN_DETAIL, LV_SCR_LOAD_ANIM_MOVE_RIGHT);
             } else if (current_screen == SCREEN_RANCE) {
-                target = guider_ui.main;   anim = LV_SCR_LOAD_ANIM_MOVE_RIGHT;
+                switch_screen(SCREEN_MAIN, LV_SCR_LOAD_ANIM_MOVE_RIGHT);
             }
         }
     } else {
-        /* 垂直滑动 */
-        if (dy > 0) { // 下滑 → setting
+        /* ========== 垂直滑动 ========== */
+        if (dy > 0) {   // 下滑 → Setting 从底部升起
             if (current_screen != SCREEN_SETTING) {
                 prev_screen = current_screen;
-                target = guider_ui.setting; anim = LV_SCR_LOAD_ANIM_MOVE_BOTTOM;
+                switch_screen(SCREEN_SETTING, LV_SCR_LOAD_ANIM_MOVE_BOTTOM);
             }
-        } else { // 上滑 → 返回
+        } else {        // 上滑
             if (current_screen == SCREEN_SETTING) {
-                switch (prev_screen) {
-                    case SCREEN_MAIN:   target = guider_ui.main;   break;
-                    case SCREEN_RANCE:  target = guider_ui.rance;  break;
-                    case SCREEN_DETAIL: target = guider_ui.detail; break;
-                    default:            target = guider_ui.main;   break;
+                /* 关键：只有从屏幕底部区域上滑才关闭 Setting */
+                if (gs_sy > SETTING_CLOSE_Y_THRESHOLD) {
+                    switch_screen(prev_screen, LV_SCR_LOAD_ANIM_MOVE_TOP);
                 }
-                anim = LV_SCR_LOAD_ANIM_MOVE_TOP;
+                /* 否则忽略此次上滑（不执行任何操作） */
             } else if (current_screen != SCREEN_MAIN) {
-                target = guider_ui.main; anim = LV_SCR_LOAD_ANIM_MOVE_TOP;
+                switch_screen(SCREEN_MAIN, LV_SCR_LOAD_ANIM_MOVE_TOP);
             }
         }
     }
-
-    if (target && target != lv_scr_act()) {
-        lv_scr_load_anim(target, anim, 300, 0, false);
-        if (target == guider_ui.rance)        current_screen = SCREEN_RANCE;
-        else if (target == guider_ui.detail)  current_screen = SCREEN_DETAIL;
-        else if (target == guider_ui.setting) current_screen = SCREEN_SETTING;
-        else if (target == guider_ui.main)    current_screen = SCREEN_MAIN;
-
-#ifdef DEBUG_GESTURE
-        Serial.print("[SWITCH] dx="); Serial.print(dx);
-        Serial.print(" dy="); Serial.print(dy);
-        Serial.print(" -> screen="); Serial.println(current_screen);
-#endif
-    }
 }
 
-/* ==================== 时间 / 温度 / Slider ==================== */
+/* ==================== 数据更新 ==================== */
 void update_detail_time()
 {
     if (guider_ui.detail_label_time == NULL) return;
@@ -188,21 +204,14 @@ void update_detail_temp()
 void update_detail_slider()
 {
     if (guider_ui.detail_slider_energy == NULL) return;
-    int16_t value = lv_slider_get_value(guider_ui.detail_slider_energy);
-    float t = (float)(value + 50) / 100.0f;
-    if (t < 0.0f) t = 0.0f;
-    if (t > 1.0f) t = 1.0f;
-    uint8_t r = (uint8_t)(t * 255);
-    uint8_t g = (uint8_t)((1.0f - t) * 255);
-    uint8_t b = 0;
+    int16_t v = lv_slider_get_value(guider_ui.detail_slider_energy);
+    float t = (float)(v + 50) / 100.0f;
+    if (t < 0) t = 0; if (t > 1) t = 1;
     lv_obj_set_style_bg_color(guider_ui.detail_slider_energy,
-                              lv_color_make(r, g, b), LV_PART_INDICATOR);
+        lv_color_make((uint8_t)(t*255), (uint8_t)((1-t)*255), 0), LV_PART_INDICATOR);
 }
 
-static void slider_event_cb(lv_event_t *e)
-{
-    update_detail_slider();
-}
+static void slider_event_cb(lv_event_t *e) { update_detail_slider(); }
 
 /* ==================== Setup ==================== */
 void setup()
@@ -211,10 +220,8 @@ void setup()
     delay(1500);
 
     pinMode(TP_RESET, OUTPUT);
-    digitalWrite(TP_RESET, LOW);
-    delay(30);
-    digitalWrite(TP_RESET, HIGH);
-    delay(50);
+    digitalWrite(TP_RESET, LOW); delay(30);
+    digitalWrite(TP_RESET, HIGH); delay(50);
 
     Wire.begin(IIC_SDA, IIC_SCL);
     touch.setPins(TP_RESET, TP_INT);
@@ -255,65 +262,58 @@ void setup()
     indev_drv.read_cb = my_touchpad_read;
     lv_indev_drv_register(&indev_drv);
 
-    /* GUI Guider 创建所有屏幕 */
+    /* 创建所有屏幕 */
     setup_ui(&guider_ui);
+    setup_scr_rance(&guider_ui);
+    setup_scr_detail(&guider_ui);
+    setup_scr_setting(&guider_ui);
+
     current_screen = SCREEN_MAIN;
 
-    /* detail 页面 Slider 事件（如不需要可注释） */
+    /* detail Slider 事件 */
     if (guider_ui.detail_slider_energy != NULL) {
         update_detail_slider();
-        lv_obj_add_event_cb(guider_ui.detail_slider_energy, slider_event_cb,
-                            LV_EVENT_VALUE_CHANGED, NULL);
+        lv_obj_add_event_cb(guider_ui.detail_slider_energy,
+                            slider_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
     }
 }
 
 /* ==================== Loop ==================== */
 void loop()
 {
-    /* ===== 独立手势检测（不依赖 LVGL indev 回调时序） ===== */
+    /* 检查动画锁是否到期 */
+    if (is_switching && millis() >= switch_unlock_ms) {
+        is_switching = false;
+    }
+
+    /* 手势检测 */
     uint8_t n = touch.getPoint(touchX, touchY, touch.getSupportTouchPoint());
 
     if (gs_state == GS_IDLE && n > 0) {
-        /* 手指按下：记录起点 */
-        gs_sx = touchX[0]; gs_sy = touchY[0];
-        gs_prev_x = touchX[0]; gs_prev_y = touchY[0];
+        gs_sx = gs_px = touchX[0];
+        gs_sy = gs_py = touchY[0];
         gs_state = GS_PRESSED;
     }
     else if (gs_state == GS_PRESSED) {
         if (n > 0) {
-            /* 手指移动中：实时更新终点 */
-            gs_prev_x = touchX[0]; gs_prev_y = touchY[0];
+            gs_px = touchX[0];
+            gs_py = touchY[0];
         } else {
-            /* 手指释放：计算总位移并触发 */
-            gs_ex = gs_prev_x; gs_ey = gs_prev_y;
+            gs_ex = gs_px; gs_ey = gs_py;
             int16_t dx = gs_ex - gs_sx;
             int16_t dy = gs_ey - gs_sy;
-
-#ifdef DEBUG_GESTURE
-            Serial.print("[GESTURE] dx="); Serial.print(dx);
-            Serial.print(" dy="); Serial.println(dy);
-#endif
-            if (abs(dx) > GESTURE_THRESH || abs(dy) > GESTURE_THRESH) {
-                do_page_switch(dx, dy);
-            }
+            process_gesture(dx, dy);
             gs_state = GS_IDLE;
         }
     }
 
-    /* ===== 数据更新（只在 detail 页刷新） ===== */
+    /* 数据更新（只在 detail 页） */
     unsigned long now = millis();
     if (current_screen == SCREEN_DETAIL) {
-        if (now - last_time_ms >= 1000) {
-            last_time_ms = now;
-            update_detail_time();
-        }
-        if (now - last_temp_ms >= 3000) {
-            last_temp_ms = now;
-            update_detail_temp();
-        }
+        if (now - last_time_ms >= 1000) { last_time_ms = now; update_detail_time(); }
+        if (now - last_temp_ms >= 3000) { last_temp_ms = now; update_detail_temp(); }
     }
 
-    /* ===== LVGL 心跳 ===== */
     lv_tick_inc(5);
     lv_timer_handler();
     delay(5);
