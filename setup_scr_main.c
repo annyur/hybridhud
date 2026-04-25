@@ -97,47 +97,6 @@ void setup_scr_main(lv_ui *ui)
     //Write style for main_meter_speed, Part: LV_PART_INDICATOR, State: LV_STATE_DEFAULT.
     lv_obj_set_style_bg_opa(ui->main_meter_speed, 0, LV_PART_INDICATOR|LV_STATE_DEFAULT);
 
-    //Write codes main_cont_bg_blue
-    ui->main_cont_bg_blue = lv_obj_create(ui->main);
-    lv_obj_set_pos(ui->main_cont_bg_blue, 183, 183);
-    lv_obj_set_size(ui->main_cont_bg_blue, 100, 100);
-    lv_obj_set_scrollbar_mode(ui->main_cont_bg_blue, LV_SCROLLBAR_MODE_OFF);
-
-    //Write style for main_cont_bg_blue, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
-    lv_obj_set_style_border_width(ui->main_cont_bg_blue, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(ui->main_cont_bg_blue, 222, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(ui->main_cont_bg_blue, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(ui->main_cont_bg_blue, lv_color_hex(0x0071ff), LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_grad_dir(ui->main_cont_bg_blue, LV_GRAD_DIR_NONE, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_top(ui->main_cont_bg_blue, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_bottom(ui->main_cont_bg_blue, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_left(ui->main_cont_bg_blue, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_right(ui->main_cont_bg_blue, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_width(ui->main_cont_bg_blue, 50, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_color(ui->main_cont_bg_blue, lv_color_hex(0x0071ff), LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_opa(ui->main_cont_bg_blue, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_spread(ui->main_cont_bg_blue, 70, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_ofs_x(ui->main_cont_bg_blue, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_ofs_y(ui->main_cont_bg_blue, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-
-    //Write codes main_cont_1
-    ui->main_cont_1 = lv_obj_create(ui->main_cont_bg_blue);
-    lv_obj_set_pos(ui->main_cont_1, -5, -5);
-    lv_obj_set_size(ui->main_cont_1, 110, 110);
-    lv_obj_set_scrollbar_mode(ui->main_cont_1, LV_SCROLLBAR_MODE_OFF);
-
-    //Write style for main_cont_1, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
-    lv_obj_set_style_border_width(ui->main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(ui->main_cont_1, 222, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(ui->main_cont_1, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(ui->main_cont_1, lv_color_hex(0x0071ff), LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_grad_dir(ui->main_cont_1, LV_GRAD_DIR_NONE, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_top(ui->main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_bottom(ui->main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_left(ui->main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_right(ui->main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_width(ui->main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-
     //Write codes main_arc_energy
     ui->main_arc_energy = lv_arc_create(ui->main);
     lv_arc_set_mode(ui->main_arc_energy, LV_ARC_MODE_NORMAL);
@@ -293,8 +252,8 @@ void setup_scr_main(lv_ui *ui)
     lv_slider_set_mode(ui->main_slider_energy, LV_SLIDER_MODE_RANGE);
     lv_slider_set_value(ui->main_slider_energy, 30, LV_ANIM_OFF);
     lv_slider_set_left_value(ui->main_slider_energy, 0, LV_ANIM_OFF);
-    lv_obj_set_pos(ui->main_slider_energy, 158, 230);
-    lv_obj_set_size(ui->main_slider_energy, 150, 5);
+    lv_obj_set_pos(ui->main_slider_energy, 138, 230);
+    lv_obj_set_size(ui->main_slider_energy, 190, 5);
 
     //Write style for main_slider_energy, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
     lv_obj_set_style_bg_opa(ui->main_slider_energy, 60, LV_PART_MAIN|LV_STATE_DEFAULT);

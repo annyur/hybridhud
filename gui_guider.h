@@ -25,8 +25,6 @@ typedef struct
 	lv_meter_scale_t *main_meter_speed_scale_0;
 	lv_meter_indicator_t *main_meter_speed_scale_0_ndline_0;
 	lv_meter_indicator_t *main_meter_speed_scale_0_arc_0;
-	lv_obj_t *main_cont_bg_blue;
-	lv_obj_t *main_cont_1;
 	lv_obj_t *main_arc_energy;
 	lv_obj_t *main_arc_oil;
 	lv_obj_t *main_img_temp;
