@@ -96,9 +96,9 @@ void update_temperature(lv_obj_t *label)
         ok = true;
     }
     if (ok) {
-        snprintf(temp_buf, sizeof(temp_buf), "%.1fC", temp);
+        snprintf(temp_buf, sizeof(temp_buf), "%.1f", temp);
     } else {
-        snprintf(temp_buf, sizeof(temp_buf), "--.-C");
+        snprintf(temp_buf, sizeof(temp_buf), "--.-");
     }
     lv_label_set_text(label, temp_buf);
 }
