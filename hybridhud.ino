@@ -1,6 +1,7 @@
 /*
- * hybridhud.ino - 过渡修复版
- * 用极简方式初始化 LVGL，手动调用 setup_scr_main，绕过 setup_ui
+ * hybridhud.ino
+ * ESP32-S3-Touch-AMOLED-1.75 + GUI Guider + LVGL 8.4
+ * 修复：大缓冲区 + rounder_cb + 恢复 setup_ui
  */
 
 #include <lvgl.h>
@@ -46,11 +47,14 @@ static lv_disp_draw_buf_t draw_buf;
 static lv_color_t *buf1 = NULL;
 static lv_color_t *buf2 = NULL;
 
+/* 时间显示 */
 lv_obj_t *time_label = NULL;
-lv_obj_t *temp_label = NULL;
 unsigned long last_time_ms = 0;
+char time_buf[6];  // "HH:MM\0"
+
+/* 温度显示 */
+lv_obj_t *temp_label = NULL;
 unsigned long last_temp_ms = 0;
-char time_buf[6];
 char temp_buf[16];
 
 /* ==================== 显示刷新回调 ==================== */
@@ -66,6 +70,15 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
     lv_disp_flush_ready(disp);
 }
 
+/* ===== 修复1：加回 rounder_cb（CO5300 需要 2px 对齐） ===== */
+void my_rounder_cb(lv_disp_drv_t *disp_drv, lv_area_t *area)
+{
+    if (area->x1 % 2 != 0) area->x1--;
+    if (area->y1 % 2 != 0) area->y1--;
+    if (area->x2 % 2 == 0) area->x2++;
+    if (area->y2 % 2 == 0) area->y2++;
+}
+
 /* ==================== 触摸回调 ==================== */
 void my_touchpad_read(lv_indev_drv_t *indev, lv_indev_data_t *data)
 {
@@ -79,7 +92,7 @@ void my_touchpad_read(lv_indev_drv_t *indev, lv_indev_data_t *data)
     }
 }
 
-/* ==================== 时间更新 ==================== */
+/* ==================== 时间更新（HH:MM） ==================== */
 void update_digital_clock(lv_obj_t *label)
 {
     if (label == NULL) return;
@@ -135,14 +148,17 @@ void setup()
     Serial.begin(115200);
     delay(1500);
 
-    /* 触摸 */
+    /* 触摸复位 */
     pinMode(TP_RESET, OUTPUT);
     digitalWrite(TP_RESET, LOW);
     delay(30);
     digitalWrite(TP_RESET, HIGH);
     delay(50);
 
+    /* I2C */
     Wire.begin(IIC_SDA, IIC_SCL);
+
+    /* 触摸初始化 */
     touch.setPins(TP_RESET, TP_INT);
     touch.begin(Wire, 0x5A, IIC_SDA, IIC_SCL);
     touch.setMaxCoordinates(LCD_WIDTH, LCD_HEIGHT);
@@ -150,10 +166,16 @@ void setup()
 
     /* RTC */
     rtc.begin(Wire, IIC_SDA, IIC_SCL);
+    /*
+     * 首次烧录或 RTC 电池掉电后，取消注释设置真实时间。
+     * 格式：rtc.setDateTime(年, 月, 日, 时, 分, 秒);
+     * 走字正确后务必重新注释！
+     */
     // rtc.setDateTime(2026, 4, 25, 17, 0, 0);
 
-    /* QMI8658 */
+    /* QMI8658 初始化 */
     if (!qmi.begin(Wire, 0x6B, IIC_SDA, IIC_SCL)) {
+        // 失败不阻塞
     } else {
         qmi.configAccelerometer(SensorQMI8658::ACC_RANGE_4G,
                                 SensorQMI8658::ACC_ODR_1000Hz,
@@ -161,63 +183,60 @@ void setup()
         qmi.enableAccelerometer();
     }
 
-    /* 显示 - 极简方式初始化（已验证有效） */
+    /* 显示初始化 */
     gfx->begin();
 
+    uint32_t sw = gfx->width();
+    uint32_t sh = gfx->height();
+
+    /* LVGL 初始化 */
     lv_init();
 
-    /* 用较小的缓冲区（极简版验证过的参数） */
-    buf1 = (lv_color_t *)heap_caps_malloc(LCD_WIDTH * 40 * sizeof(lv_color_t), MALLOC_CAP_DMA);
-    buf2 = (lv_color_t *)heap_caps_malloc(LCD_WIDTH * 40 * sizeof(lv_color_t), MALLOC_CAP_DMA);
-    lv_disp_draw_buf_init(&draw_buf, buf1, buf2, LCD_WIDTH * 40);
+    /* ===== 修复2：缓冲区改回 1/4 屏幕大小 ===== */
+    uint32_t buf_size = (sw * sh) / 4;
+    buf1 = (lv_color_t *)heap_caps_malloc(buf_size * sizeof(lv_color_t), MALLOC_CAP_DMA);
+    buf2 = (lv_color_t *)heap_caps_malloc(buf_size * sizeof(lv_color_t), MALLOC_CAP_DMA);
+    lv_disp_draw_buf_init(&draw_buf, buf1, buf2, buf_size);
 
+    /* 注册显示驱动 */
     static lv_disp_drv_t disp_drv;
     lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res = LCD_WIDTH;
-    disp_drv.ver_res = LCD_HEIGHT;
+    disp_drv.hor_res = sw;
+    disp_drv.ver_res = sh;
     disp_drv.flush_cb = my_disp_flush;
+    disp_drv.rounder_cb = my_rounder_cb;  /* 修复3：加回 rounder */
     disp_drv.draw_buf = &draw_buf;
     lv_disp_drv_register(&disp_drv);
 
+    /* 注册输入设备 */
     static lv_indev_drv_t indev_drv;
     lv_indev_drv_init(&indev_drv);
     indev_drv.type = LV_INDEV_TYPE_POINTER;
     indev_drv.read_cb = my_touchpad_read;
     lv_indev_drv_register(&indev_drv);
 
-    /* ===== 关键：直接调用 setup_scr_main，绕过 setup_ui ===== */
-    Serial.println("[1] About to setup_scr_main...");
-    setup_scr_main(&guider_ui);
-    Serial.println("[2] setup_scr_main DONE");
+    /* ===== 修复4：恢复 setup_ui（没有动画问题） ===== */
+    setup_ui(&guider_ui);
 
-    /* 手动加载屏幕（无动画） */
-    lv_scr_load(guider_ui.main);
-    Serial.println("[3] Screen loaded");
-
-    /* 绑定控件 */
+    /* 绑定时间 Label */
     time_label = guider_ui.main_label_time;
     if (time_label != NULL) {
         update_digital_clock(time_label);
     }
 
+    /* 绑定温度 Label */
     temp_label = guider_ui.main_label_temp;
     if (temp_label != NULL) {
         update_temperature(temp_label);
     }
 
+    /* 绑定 Slider 颜色渐变 */
     if (guider_ui.main_slider_energy != NULL) {
         update_slider_energy_color(guider_ui.main_slider_energy);
         lv_obj_add_event_cb(guider_ui.main_slider_energy, slider_energy_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
     }
 
-    /* 首次刷新 */
-    for (int i = 0; i < 20; i++) {
-        lv_tick_inc(5);
-        lv_timer_handler();
-        delay(5);
-    }
-
-    Serial.println("[OK] Done");
+    Serial.println("[OK] Setup done");
 }
 
 /* ==================== Loop ==================== */
@@ -226,10 +245,14 @@ void loop()
     lv_tick_inc(5);
 
     unsigned long now = millis();
+
+    /* 每秒更新时间 */
     if (now - last_time_ms >= 1000) {
         last_time_ms = now;
         update_digital_clock(time_label);
     }
+
+    /* 每 3 秒更新温度 */
     if (now - last_temp_ms >= 3000) {
         last_temp_ms = now;
         update_temperature(temp_label);
