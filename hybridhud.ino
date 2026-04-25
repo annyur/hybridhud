@@ -9,8 +9,8 @@
 #include <Wire.h>
 #include <stdio.h>
 
-#include "gui_guider.h"
-#include "custom.h"
+#include "src/gui_guider.h"
+#include "src/custom.h"
 #include "TouchDrvCSTXXX.hpp"
 #include <SensorPCF85063.hpp>
 #include <SensorQMI8658.hpp>
