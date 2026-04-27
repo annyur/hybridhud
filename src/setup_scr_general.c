@@ -250,8 +250,8 @@ void setup_scr_general(lv_ui *ui)
     lv_slider_set_mode(ui->general_slider_energy, LV_SLIDER_MODE_RANGE);
     lv_slider_set_value(ui->general_slider_energy, 30, LV_ANIM_OFF);
     lv_slider_set_left_value(ui->general_slider_energy, 0, LV_ANIM_OFF);
-    lv_obj_set_pos(ui->general_slider_energy, 138, 230);
-    lv_obj_set_size(ui->general_slider_energy, 190, 5);
+    lv_obj_set_pos(ui->general_slider_energy, 133, 230);
+    lv_obj_set_size(ui->general_slider_energy, 200, 5);
 
     //Write style for general_slider_energy, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
     lv_obj_set_style_bg_opa(ui->general_slider_energy, 60, LV_PART_MAIN|LV_STATE_DEFAULT);
@@ -275,7 +275,7 @@ void setup_scr_general(lv_ui *ui)
     ui->general_label_speed_number = lv_label_create(ui->general);
     lv_label_set_text(ui->general_label_speed_number, "120");
     lv_label_set_long_mode(ui->general_label_speed_number, LV_LABEL_LONG_WRAP);
-    lv_obj_set_pos(ui->general_label_speed_number, 88, 158);
+    lv_obj_set_pos(ui->general_label_speed_number, 88, 155);
     lv_obj_set_size(ui->general_label_speed_number, 289, 71);
 
     //Write style for general_label_speed_number, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
@@ -298,7 +298,7 @@ void setup_scr_general(lv_ui *ui)
     ui->general_label_energy_number = lv_label_create(ui->general);
     lv_label_set_text(ui->general_label_energy_number, "+24.8");
     lv_label_set_long_mode(ui->general_label_energy_number, LV_LABEL_LONG_WRAP);
-    lv_obj_set_pos(ui->general_label_energy_number, 3, 235);
+    lv_obj_set_pos(ui->general_label_energy_number, 3, 238);
     lv_obj_set_size(ui->general_label_energy_number, 289, 71);
 
     //Write style for general_label_energy_number, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
@@ -367,7 +367,7 @@ void setup_scr_general(lv_ui *ui)
     ui->general_label_trip = lv_label_create(ui->general);
     lv_label_set_text(ui->general_label_trip, "trip\n");
     lv_label_set_long_mode(ui->general_label_trip, LV_LABEL_LONG_WRAP);
-    lv_obj_set_pos(ui->general_label_trip, 179, 350);
+    lv_obj_set_pos(ui->general_label_trip, 179, 355);
     lv_obj_set_size(ui->general_label_trip, 100, 32);
 
     //Write style for general_label_trip, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
@@ -406,7 +406,7 @@ void setup_scr_general(lv_ui *ui)
     ui->general_label_1 = lv_label_create(ui->general);
     lv_label_set_text(ui->general_label_1, "999999");
     lv_label_set_long_mode(ui->general_label_1, LV_LABEL_LONG_WRAP);
-    lv_obj_set_pos(ui->general_label_1, 154, 414);
+    lv_obj_set_pos(ui->general_label_1, 154, 419);
     lv_obj_set_size(ui->general_label_1, 100, 32);
 
     //Write style for general_label_1, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
@@ -429,7 +429,7 @@ void setup_scr_general(lv_ui *ui)
     ui->general_label_2 = lv_label_create(ui->general);
     lv_label_set_text(ui->general_label_2, "14.9");
     lv_label_set_long_mode(ui->general_label_2, LV_LABEL_LONG_WRAP);
-    lv_obj_set_pos(ui->general_label_2, 55, 382);
+    lv_obj_set_pos(ui->general_label_2, 55, 387);
     lv_obj_set_size(ui->general_label_2, 100, 32);
 
     //Write style for general_label_2, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
@@ -452,7 +452,7 @@ void setup_scr_general(lv_ui *ui)
     ui->general_label_3 = lv_label_create(ui->general);
     lv_label_set_text(ui->general_label_3, "5.6");
     lv_label_set_long_mode(ui->general_label_3, LV_LABEL_LONG_WRAP);
-    lv_obj_set_pos(ui->general_label_3, 179, 382);
+    lv_obj_set_pos(ui->general_label_3, 179, 387);
     lv_obj_set_size(ui->general_label_3, 100, 32);
 
     //Write style for general_label_3, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
@@ -475,7 +475,7 @@ void setup_scr_general(lv_ui *ui)
     ui->general_label_4 = lv_label_create(ui->general);
     lv_label_set_text(ui->general_label_4, "kw/H");
     lv_label_set_long_mode(ui->general_label_4, LV_LABEL_LONG_WRAP);
-    lv_obj_set_pos(ui->general_label_4, 141, 382);
+    lv_obj_set_pos(ui->general_label_4, 141, 387);
     lv_obj_set_size(ui->general_label_4, 100, 32);
 
     //Write style for general_label_4, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
@@ -498,7 +498,7 @@ void setup_scr_general(lv_ui *ui)
     ui->general_label_5 = lv_label_create(ui->general);
     lv_label_set_text(ui->general_label_5, "L/km");
     lv_label_set_long_mode(ui->general_label_5, LV_LABEL_LONG_WRAP);
-    lv_obj_set_pos(ui->general_label_5, 268, 382);
+    lv_obj_set_pos(ui->general_label_5, 268, 387);
     lv_obj_set_size(ui->general_label_5, 100, 32);
 
     //Write style for general_label_5, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
@@ -521,7 +521,7 @@ void setup_scr_general(lv_ui *ui)
     ui->general_label_6 = lv_label_create(ui->general);
     lv_label_set_text(ui->general_label_6, "km");
     lv_label_set_long_mode(ui->general_label_6, LV_LABEL_LONG_WRAP);
-    lv_obj_set_pos(ui->general_label_6, 231, 414);
+    lv_obj_set_pos(ui->general_label_6, 231, 419);
     lv_obj_set_size(ui->general_label_6, 100, 32);
 
     //Write style for general_label_6, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
@@ -544,7 +544,7 @@ void setup_scr_general(lv_ui *ui)
     ui->general_label_unit_kw = lv_label_create(ui->general);
     lv_label_set_text(ui->general_label_unit_kw, "kw");
     lv_label_set_long_mode(ui->general_label_unit_kw, LV_LABEL_LONG_WRAP);
-    lv_obj_set_pos(ui->general_label_unit_kw, 263, 269);
+    lv_obj_set_pos(ui->general_label_unit_kw, 263, 272);
     lv_obj_set_size(ui->general_label_unit_kw, 100, 32);
 
     //Write style for general_label_unit_kw, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.

@@ -225,7 +225,6 @@ static void update_time_labels(void)
     rtc.getDateTime(&timeinfo);
     snprintf(time_buf, sizeof(time_buf), "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
     if (guider_ui.general_label_time) lv_label_set_text(guider_ui.general_label_time, time_buf);
-    if (guider_ui.race_label_time)    lv_label_set_text(guider_ui.race_label_time, time_buf);
 }
 
 static void update_general_temp(void)

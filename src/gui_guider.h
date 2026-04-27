@@ -58,11 +58,15 @@ typedef struct
 	lv_obj_t *race_arc_2;
 	lv_obj_t *race_arc_1;
 	lv_obj_t *race_label_4;
-	lv_obj_t *race_label_3;
-	lv_obj_t *race_label_2;
+	lv_obj_t *race_label_speed_number;
+	lv_obj_t *race_label_energy_number;
 	lv_obj_t *race_btn_G;
 	lv_obj_t *race_btn_G_label;
 	lv_obj_t *race_led_G;
+	lv_obj_t *race_label_ECT_temp;
+	lv_obj_t *race_label_MOTOR_temp;
+	lv_obj_t *race_img_temp2;
+	lv_obj_t *race_img_temp1;
 	lv_obj_t *setting;
 	bool setting_del;
 	lv_obj_t *setting_label_1;
@@ -109,6 +113,8 @@ void setup_scr_race(lv_ui *ui);
 void setup_scr_setting(lv_ui *ui);
 void setup_scr_bluetooth(lv_ui *ui);
 LV_IMG_DECLARE(_tempunit_alpha_20x19);
+LV_IMG_DECLARE(_tempunit_alpha_16x15);
+LV_IMG_DECLARE(_tempunit_alpha_16x15);
 
 LV_FONT_DECLARE(lv_font_montserratMedium_26)
 LV_FONT_DECLARE(lv_font_montserratMedium_30)
@@ -117,9 +123,10 @@ LV_FONT_DECLARE(lv_font_montserratMedium_70)
 LV_FONT_DECLARE(lv_font_montserratMedium_60)
 LV_FONT_DECLARE(lv_font_montserratMedium_20)
 LV_FONT_DECLARE(lv_font_montserratMedium_12)
-LV_FONT_DECLARE(lv_font_montserratMedium_16)
+LV_FONT_DECLARE(lv_font_montserratMedium_18)
 LV_FONT_DECLARE(lv_font_montserratMedium_48)
 LV_FONT_DECLARE(lv_font_montserratMedium_36)
+LV_FONT_DECLARE(lv_font_montserratMedium_16)
 
 
 #ifdef __cplusplus
