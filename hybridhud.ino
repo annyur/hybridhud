@@ -12,6 +12,8 @@
 #include "src/custom.h"
 #include "setting_manager.h"
 #include "bluetooth_manager.h"
+#include "general_manager.h"
+#include "race_manager.h"
 #include "TouchDrvCSTXXX.hpp"
 #include <SensorPCF85063.hpp>
 #include <SensorQMI8658.hpp>
@@ -71,13 +73,8 @@ static screen_id_t prev_main_screen = SCREEN_GENERAL;
 static bool is_switching = false;
 static uint32_t switch_unlock_ms = 0;
 
-// ---- Periodic update timing ----
-static uint32_t last_time_ms = 0;
-static uint32_t last_temp_ms = 0;
-
-// ---- Formatted string buffers ----
-static char time_buf[6];
-static char temp_buf[16];
+// ---- Periodic update timing (bluetooth only) ----
+// general_manager 和 race_manager 各自维护自己的计时器
 
 // ---- Touch state (updated by my_touchpad_read) ----
 static volatile int16_t g_touch_x = 0, g_touch_y = 0;
@@ -177,9 +174,15 @@ static void app_switch_screen(app_screen_t target, bool animate)
         current_screen = SCREEN_SETTING;
     }
 
-    /* 进入蓝牙页面时初始化 */
+    /* 子页面生命周期 */
     if (target == APP_SCREEN_BLUETOOTH) {
         bluetooth_manager_enter();
+    } else if (target == APP_SCREEN_GENERAL) {
+        general_manager_enter();
+        race_manager_exit();
+    } else if (target == APP_SCREEN_RACE) {
+        race_manager_enter();
+        general_manager_exit();
     }
 
     if (target != APP_SCREEN_SETTING && target != APP_SCREEN_BLUETOOTH) {
@@ -217,37 +220,8 @@ static void process_gesture(int16_t dx, int16_t dy, int16_t start_y)
 }
 
 // ============================================================
-// Data update helpers
+// Data update: 已移至 general_manager / race_manager
 // ============================================================
-static void update_time_labels(void)
-{
-    struct tm timeinfo;
-    rtc.getDateTime(&timeinfo);
-    snprintf(time_buf, sizeof(time_buf), "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
-    if (guider_ui.general_label_time) lv_label_set_text(guider_ui.general_label_time, time_buf);
-}
-
-static void update_general_temp(void)
-{
-    if (guider_ui.general_label_temp == NULL) return;
-
-    float temp = 0.0f;
-    bool ok = qmi.getDataReady() && (temp = qmi.getTemperature_C(), true);
-    snprintf(temp_buf, sizeof(temp_buf), ok ? "%.1f" : "--.-", temp);
-    lv_label_set_text(guider_ui.general_label_temp, temp_buf);
-}
-
-static void update_general_slider(void)
-{
-    if (guider_ui.general_slider_energy == NULL) return;
-
-    int16_t v = lv_slider_get_value(guider_ui.general_slider_energy);
-    float t = constrain((float)(v + 50) / 100.0f, 0.0f, 1.0f);
-    lv_color_t color = lv_color_make((uint8_t)(t * 255), (uint8_t)((1.0f - t) * 255), 0);
-    lv_obj_set_style_bg_color(guider_ui.general_slider_energy, color, LV_PART_INDICATOR);
-}
-
-static void slider_event_cb(lv_event_t *e) { (void)e; update_general_slider(); }
 
 // ============================================================
 // Setup
@@ -351,12 +325,11 @@ void setup()
     bluetooth_manager_init(&guider_ui);
     bluetooth_manager_set_switch_cb(app_switch_screen);
 
-    // Slider color callback
-    if (guider_ui.general_slider_energy != NULL) {
-        update_general_slider();
-        lv_obj_add_event_cb(guider_ui.general_slider_energy,
-                            slider_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
-    }
+    Serial.println("[DBG] Init general_manager...");
+    general_manager_init(&guider_ui);
+
+    Serial.println("[DBG] Init race_manager...");
+    race_manager_init(&guider_ui);
 
     // Restore last main screen from NVS
     Serial.println("[DBG] Load NVS...");
@@ -394,6 +367,13 @@ void loop()
     lv_tick_inc(5);
     lv_timer_handler();
 
+    // 根据当前页面选择性调用 manager update（提升效率）
+    if (current_screen == SCREEN_GENERAL) {
+        general_manager_update(now);
+    } else if (current_screen == SCREEN_RACE) {
+        race_manager_update(now);
+    }
+
     // Bluetooth scan result refresh
     bluetooth_manager_update();
 
@@ -409,17 +389,6 @@ void loop()
     } else if (gs_state == GESTURE_ACTIVE) {
         process_gesture(gs_ex - gs_sx, gs_ey - gs_sy, gs_sy);
         gs_state = GESTURE_IDLE;
-    }
-
-    // Periodic updates
-    if (now - last_time_ms >= TIME_UPDATE_INTERVAL_MS) {
-        last_time_ms = now;
-        update_time_labels();
-    }
-
-    if (now - last_temp_ms >= TEMP_UPDATE_INTERVAL_MS) {
-        last_temp_ms = now;
-        update_general_temp();
     }
 
     delay(5);
