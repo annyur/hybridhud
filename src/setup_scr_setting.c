@@ -70,7 +70,7 @@ void setup_scr_setting(lv_ui *ui)
     lv_obj_set_style_border_opa(ui->setting_btn_Bluetooth, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_border_color(ui->setting_btn_Bluetooth, lv_color_hex(0x00bdff), LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_border_side(ui->setting_btn_Bluetooth, LV_BORDER_SIDE_FULL, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(ui->setting_btn_Bluetooth, 10, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(ui->setting_btn_Bluetooth, 80, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_shadow_width(ui->setting_btn_Bluetooth, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(ui->setting_btn_Bluetooth, lv_color_hex(0xffffff), LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui->setting_btn_Bluetooth, &lv_font_montserratMedium_16, LV_PART_MAIN|LV_STATE_DEFAULT);
@@ -96,7 +96,7 @@ void setup_scr_setting(lv_ui *ui)
     lv_obj_set_style_border_opa(ui->setting_btn_General, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_border_color(ui->setting_btn_General, lv_color_hex(0x00bdff), LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_border_side(ui->setting_btn_General, LV_BORDER_SIDE_FULL, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(ui->setting_btn_General, 10, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(ui->setting_btn_General, 80, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_shadow_width(ui->setting_btn_General, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(ui->setting_btn_General, lv_color_hex(0xffffff), LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui->setting_btn_General, &lv_font_montserratMedium_16, LV_PART_MAIN|LV_STATE_DEFAULT);

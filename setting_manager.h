@@ -8,16 +8,13 @@ typedef enum {
     APP_SCREEN_GENERAL = 0,
     APP_SCREEN_RACE,
     APP_SCREEN_SETTING,
-    APP_SCREEN_BLUETOOTH
+    APP_SCREEN_BLUETOOTH,
+    APP_SCREEN_TOGGLE
 } app_screen_t;
 
-/* Screen switch callback (implemented by main file) */
 typedef void (*app_switch_cb_t)(app_screen_t target, bool animate);
 
-/* Initialize setting page button events */
 void setting_manager_init(lv_ui *ui);
-
-/* Register switch callback */
 void setting_manager_set_switch_cb(app_switch_cb_t cb);
 
 #endif

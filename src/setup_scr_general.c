@@ -540,28 +540,28 @@ void setup_scr_general(lv_ui *ui)
     lv_obj_set_style_pad_left(ui->general_label_6, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_shadow_width(ui->general_label_6, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
 
-    //Write codes general_label_7
-    ui->general_label_7 = lv_label_create(ui->general);
-    lv_label_set_text(ui->general_label_7, "kw");
-    lv_label_set_long_mode(ui->general_label_7, LV_LABEL_LONG_WRAP);
-    lv_obj_set_pos(ui->general_label_7, 263, 269);
-    lv_obj_set_size(ui->general_label_7, 100, 32);
+    //Write codes general_label_unit_kw
+    ui->general_label_unit_kw = lv_label_create(ui->general);
+    lv_label_set_text(ui->general_label_unit_kw, "kw");
+    lv_label_set_long_mode(ui->general_label_unit_kw, LV_LABEL_LONG_WRAP);
+    lv_obj_set_pos(ui->general_label_unit_kw, 263, 269);
+    lv_obj_set_size(ui->general_label_unit_kw, 100, 32);
 
-    //Write style for general_label_7, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
-    lv_obj_set_style_border_width(ui->general_label_7, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(ui->general_label_7, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_color(ui->general_label_7, lv_color_hex(0xffffff), LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(ui->general_label_7, &lv_font_montserratMedium_20, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_opa(ui->general_label_7, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_letter_space(ui->general_label_7, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_line_space(ui->general_label_7, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_align(ui->general_label_7, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(ui->general_label_7, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_top(ui->general_label_7, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_right(ui->general_label_7, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_bottom(ui->general_label_7, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_left(ui->general_label_7, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_width(ui->general_label_7, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    //Write style for general_label_unit_kw, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
+    lv_obj_set_style_border_width(ui->general_label_unit_kw, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(ui->general_label_unit_kw, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(ui->general_label_unit_kw, lv_color_hex(0xffffff), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui->general_label_unit_kw, &lv_font_montserratMedium_20, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_opa(ui->general_label_unit_kw, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_letter_space(ui->general_label_unit_kw, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_line_space(ui->general_label_unit_kw, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_align(ui->general_label_unit_kw, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui->general_label_unit_kw, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_top(ui->general_label_unit_kw, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_right(ui->general_label_unit_kw, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_bottom(ui->general_label_unit_kw, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_left(ui->general_label_unit_kw, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_shadow_width(ui->general_label_unit_kw, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
 
     //The custom code of general.
 

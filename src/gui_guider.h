@@ -41,17 +41,28 @@ typedef struct
 	lv_obj_t *general_label_4;
 	lv_obj_t *general_label_5;
 	lv_obj_t *general_label_6;
-	lv_obj_t *general_label_7;
+	lv_obj_t *general_label_unit_kw;
 	lv_obj_t *race;
 	bool race_del;
+	lv_obj_t *race_cont_G;
+	lv_obj_t *race_meter_G;
+	lv_meter_scale_t *race_meter_G_scale_0;
+	lv_obj_t *race_label_7;
+	lv_obj_t *race_label_6;
+	lv_obj_t *race_label_G_top;
+	lv_obj_t *race_label_G_down;
+	lv_obj_t *race_label_G_right;
+	lv_obj_t *race_label_left;
 	lv_obj_t *race_arc_4;
 	lv_obj_t *race_arc_3;
 	lv_obj_t *race_arc_2;
 	lv_obj_t *race_arc_1;
-	lv_obj_t *race_label_time;
 	lv_obj_t *race_label_4;
 	lv_obj_t *race_label_3;
 	lv_obj_t *race_label_2;
+	lv_obj_t *race_btn_G;
+	lv_obj_t *race_btn_G_label;
+	lv_obj_t *race_led_G;
 	lv_obj_t *setting;
 	bool setting_del;
 	lv_obj_t *setting_label_1;
@@ -105,9 +116,10 @@ LV_FONT_DECLARE(lv_font_montserratMedium_24)
 LV_FONT_DECLARE(lv_font_montserratMedium_70)
 LV_FONT_DECLARE(lv_font_montserratMedium_60)
 LV_FONT_DECLARE(lv_font_montserratMedium_20)
-LV_FONT_DECLARE(lv_font_montserratMedium_36)
-LV_FONT_DECLARE(lv_font_montserratMedium_16)
 LV_FONT_DECLARE(lv_font_montserratMedium_12)
+LV_FONT_DECLARE(lv_font_montserratMedium_16)
+LV_FONT_DECLARE(lv_font_montserratMedium_48)
+LV_FONT_DECLARE(lv_font_montserratMedium_36)
 
 
 #ifdef __cplusplus

@@ -137,6 +137,11 @@ static void app_switch_screen(app_screen_t target, bool animate)
 {
     if (is_switching) return;
 
+    /* Theme 按钮：在 general 和 race 之间切换 */
+    if (target == APP_SCREEN_TOGGLE) {
+        target = (prev_main_screen == SCREEN_RACE) ? APP_SCREEN_GENERAL : APP_SCREEN_RACE;
+    }
+
     /* 离开蓝牙页面时清理 */
     if (current_screen == SCREEN_BLUETOOTH) {
         bluetooth_manager_exit();
