@@ -59,66 +59,70 @@ void setup_scr_setting(lv_ui *ui)
     lv_obj_align(ui->setting_btn_Bluetooth_label, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_pad_all(ui->setting_btn_Bluetooth, 0, LV_STATE_DEFAULT);
     lv_obj_set_width(ui->setting_btn_Bluetooth_label, LV_PCT(100));
-    lv_obj_set_pos(ui->setting_btn_Bluetooth, 158, 348);
+    lv_obj_set_pos(ui->setting_btn_Bluetooth, 238, 95);
     lv_obj_set_size(ui->setting_btn_Bluetooth, 150, 80);
 
     //Write style for setting_btn_Bluetooth, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
     lv_obj_set_style_bg_opa(ui->setting_btn_Bluetooth, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(ui->setting_btn_Bluetooth, lv_color_hex(0x2195f6), LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_bg_grad_dir(ui->setting_btn_Bluetooth, LV_GRAD_DIR_NONE, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(ui->setting_btn_Bluetooth, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(ui->setting_btn_Bluetooth, 5, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(ui->setting_btn_Bluetooth, 1, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_border_opa(ui->setting_btn_Bluetooth, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_border_color(ui->setting_btn_Bluetooth, lv_color_hex(0x00bdff), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_border_side(ui->setting_btn_Bluetooth, LV_BORDER_SIDE_FULL, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(ui->setting_btn_Bluetooth, 10, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_shadow_width(ui->setting_btn_Bluetooth, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(ui->setting_btn_Bluetooth, lv_color_hex(0xffffff), LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui->setting_btn_Bluetooth, &lv_font_montserratMedium_16, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_text_opa(ui->setting_btn_Bluetooth, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_text_align(ui->setting_btn_Bluetooth, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN|LV_STATE_DEFAULT);
 
-    //Write codes setting_btn_Race
-    ui->setting_btn_Race = lv_btn_create(ui->setting);
-    ui->setting_btn_Race_label = lv_label_create(ui->setting_btn_Race);
-    lv_label_set_text(ui->setting_btn_Race_label, "Race");
-    lv_label_set_long_mode(ui->setting_btn_Race_label, LV_LABEL_LONG_WRAP);
-    lv_obj_align(ui->setting_btn_Race_label, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_style_pad_all(ui->setting_btn_Race, 0, LV_STATE_DEFAULT);
-    lv_obj_set_width(ui->setting_btn_Race_label, LV_PCT(100));
-    lv_obj_set_pos(ui->setting_btn_Race, 249, 105);
-    lv_obj_set_size(ui->setting_btn_Race, 150, 80);
-
-    //Write style for setting_btn_Race, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
-    lv_obj_set_style_bg_opa(ui->setting_btn_Race, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(ui->setting_btn_Race, lv_color_hex(0x2195f6), LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_grad_dir(ui->setting_btn_Race, LV_GRAD_DIR_NONE, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(ui->setting_btn_Race, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(ui->setting_btn_Race, 5, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_width(ui->setting_btn_Race, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_color(ui->setting_btn_Race, lv_color_hex(0xffffff), LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(ui->setting_btn_Race, &lv_font_montserratMedium_16, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_opa(ui->setting_btn_Race, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_align(ui->setting_btn_Race, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN|LV_STATE_DEFAULT);
-
     //Write codes setting_btn_General
     ui->setting_btn_General = lv_btn_create(ui->setting);
     ui->setting_btn_General_label = lv_label_create(ui->setting_btn_General);
-    lv_label_set_text(ui->setting_btn_General_label, "General");
+    lv_label_set_text(ui->setting_btn_General_label, "Theme");
     lv_label_set_long_mode(ui->setting_btn_General_label, LV_LABEL_LONG_WRAP);
     lv_obj_align(ui->setting_btn_General_label, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_pad_all(ui->setting_btn_General, 0, LV_STATE_DEFAULT);
     lv_obj_set_width(ui->setting_btn_General_label, LV_PCT(100));
-    lv_obj_set_pos(ui->setting_btn_General, 76, 105);
+    lv_obj_set_pos(ui->setting_btn_General, 78, 95);
     lv_obj_set_size(ui->setting_btn_General, 150, 80);
 
     //Write style for setting_btn_General, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
     lv_obj_set_style_bg_opa(ui->setting_btn_General, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(ui->setting_btn_General, lv_color_hex(0x2195f6), LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_bg_grad_dir(ui->setting_btn_General, LV_GRAD_DIR_NONE, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(ui->setting_btn_General, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(ui->setting_btn_General, 5, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(ui->setting_btn_General, 1, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_border_opa(ui->setting_btn_General, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_border_color(ui->setting_btn_General, lv_color_hex(0x00bdff), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_border_side(ui->setting_btn_General, LV_BORDER_SIDE_FULL, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(ui->setting_btn_General, 10, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_shadow_width(ui->setting_btn_General, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(ui->setting_btn_General, lv_color_hex(0xffffff), LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui->setting_btn_General, &lv_font_montserratMedium_16, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_text_opa(ui->setting_btn_General, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_text_align(ui->setting_btn_General, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN|LV_STATE_DEFAULT);
+
+    //Write codes setting_cont_1
+    ui->setting_cont_1 = lv_obj_create(ui->setting);
+    lv_obj_set_pos(ui->setting_cont_1, 78, 193);
+    lv_obj_set_size(ui->setting_cont_1, 310, 200);
+    lv_obj_set_scrollbar_mode(ui->setting_cont_1, LV_SCROLLBAR_MODE_OFF);
+
+    //Write style for setting_cont_1, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
+    lv_obj_set_style_border_width(ui->setting_cont_1, 1, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_border_opa(ui->setting_cont_1, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_border_color(ui->setting_cont_1, lv_color_hex(0x00bdff), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_border_side(ui->setting_cont_1, LV_BORDER_SIDE_FULL, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(ui->setting_cont_1, 10, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui->setting_cont_1, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(ui->setting_cont_1, lv_color_hex(0x2195f6), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_grad_dir(ui->setting_cont_1, LV_GRAD_DIR_NONE, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_top(ui->setting_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_bottom(ui->setting_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_left(ui->setting_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_right(ui->setting_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_shadow_width(ui->setting_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
 
     //The custom code of setting.
 

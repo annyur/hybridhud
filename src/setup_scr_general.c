@@ -200,7 +200,7 @@ void setup_scr_general(lv_ui *ui)
 
     //Write codes general_label_time
     ui->general_label_time = lv_label_create(ui->general);
-    lv_label_set_text(ui->general_label_time, "23：00");
+    lv_label_set_text(ui->general_label_time, "23:00");
     lv_label_set_long_mode(ui->general_label_time, LV_LABEL_LONG_WRAP);
     lv_obj_set_pos(ui->general_label_time, 173, 69);
     lv_obj_set_size(ui->general_label_time, 120, 32);

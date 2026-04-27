@@ -57,10 +57,9 @@ typedef struct
 	lv_obj_t *setting_label_1;
 	lv_obj_t *setting_btn_Bluetooth;
 	lv_obj_t *setting_btn_Bluetooth_label;
-	lv_obj_t *setting_btn_Race;
-	lv_obj_t *setting_btn_Race_label;
 	lv_obj_t *setting_btn_General;
 	lv_obj_t *setting_btn_General_label;
+	lv_obj_t *setting_cont_1;
 	lv_obj_t *bluetooth;
 	bool bluetooth_del;
 	lv_obj_t *bluetooth_bt_label_title;

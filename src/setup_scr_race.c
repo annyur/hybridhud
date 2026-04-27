@@ -158,7 +158,7 @@ void setup_scr_race(lv_ui *ui)
 
     //Write codes race_label_time
     ui->race_label_time = lv_label_create(ui->race);
-    lv_label_set_text(ui->race_label_time, "23：00");
+    lv_label_set_text(ui->race_label_time, "23:00");
     lv_label_set_long_mode(ui->race_label_time, LV_LABEL_LONG_WRAP);
     lv_obj_set_pos(ui->race_label_time, 173, 69);
     lv_obj_set_size(ui->race_label_time, 120, 32);
