@@ -67,6 +67,9 @@ typedef struct
 	lv_obj_t *race_label_MOTOR_temp;
 	lv_obj_t *race_img_temp2;
 	lv_obj_t *race_img_temp1;
+	lv_obj_t *race_label_9;
+	lv_obj_t *race_img_1;
+	lv_obj_t *race_img_2;
 	lv_obj_t *setting;
 	bool setting_del;
 	lv_obj_t *setting_label_1;
@@ -115,6 +118,8 @@ void setup_scr_bluetooth(lv_ui *ui);
 LV_IMG_DECLARE(_tempunit_alpha_20x19);
 LV_IMG_DECLARE(_tempunit_alpha_16x15);
 LV_IMG_DECLARE(_tempunit_alpha_16x15);
+LV_IMG_DECLARE(_e_alpha_18x18);
+LV_IMG_DECLARE(_o_alpha_18x18);
 
 LV_FONT_DECLARE(lv_font_montserratMedium_26)
 LV_FONT_DECLARE(lv_font_montserratMedium_30)
