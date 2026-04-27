@@ -75,18 +75,18 @@ void ui_animation(void * var, int32_t duration, int32_t delay, int32_t start_val
 void init_scr_del_flag(lv_ui *ui)
 {
 
-    ui->main_del = true;
-    ui->rance_del = true;
-    ui->detail_del = true;
+    ui->general_del = true;
+    ui->race_del = true;
     ui->setting_del = true;
+    ui->bluetooth_del = true;
 }
 
 void setup_ui(lv_ui *ui)
 {
     init_scr_del_flag(ui);
     init_keyboard(ui);
-    setup_scr_main(ui);
-    lv_scr_load(ui->main);
+    setup_scr_general(ui);
+    lv_scr_load(ui->general);
 }
 
 void init_keyboard(lv_ui *ui)

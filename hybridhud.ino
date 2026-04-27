@@ -1,19 +1,22 @@
 /*
- * hybridhud.ino
- * 4屏手势导航 + 动画 + 防连切 + Setting底部上滑关闭
+ * hybridhud.ino — 基于仓库无旋转版本 + 蓝牙模块
+ * 无 sw_rotate, 无 lv_disp_set_rotation, USB朝左自然方向
  */
 
 #include <lvgl.h>
 #include <Arduino_GFX_Library.h>
 #include <Wire.h>
-#include <stdio.h>
+#include <Preferences.h>
 
 #include "src/gui_guider.h"
 #include "src/custom.h"
+#include "setting_manager.h"
+#include "bluetooth_manager.h"
 #include "TouchDrvCSTXXX.hpp"
 #include <SensorPCF85063.hpp>
 #include <SensorQMI8658.hpp>
 
+// ---- Pin definitions ----
 #define LCD_SDIO0    4
 #define LCD_SDIO1    5
 #define LCD_SDIO2    6
@@ -29,6 +32,17 @@
 #define TP_INT      11
 #define TP_RESET    40
 
+// ---- Gesture thresholds ----
+#define SETTING_OPEN_Y_THRESHOLD     80
+#define SETTING_CLOSE_Y_THRESHOLD   420
+
+// ---- Animation & timing ----
+#define ANIM_DURATION_MS            20
+#define SWITCH_LOCK_TIME            20
+#define TIME_UPDATE_INTERVAL_MS     1000
+#define TEMP_UPDATE_INTERVAL_MS     3000
+
+// ---- Global hardware objects ----
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
     LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
 Arduino_GFX *gfx = new Arduino_CO5300(
@@ -39,46 +53,54 @@ SensorPCF85063 rtc;
 SensorQMI8658 qmi;
 lv_ui guider_ui;
 
-int16_t touchX[5], touchY[5];
+// ---- LVGL display buffer ----
 static lv_disp_draw_buf_t draw_buf;
 static lv_color_t *buf1 = NULL;
 static lv_color_t *buf2 = NULL;
 
-unsigned long last_time_ms = 0;
-unsigned long last_temp_ms = 0;
-char time_buf[6];
-char temp_buf[16];
-
-/* ==================== 页面枚举 ==================== */
+// ---- Internal screen IDs (for state tracking) ----
 typedef enum {
-    SCREEN_MAIN = 0,
-    SCREEN_RANCE,
-    SCREEN_DETAIL,
-    SCREEN_SETTING
+    SCREEN_GENERAL = 0,
+    SCREEN_RACE,
+    SCREEN_SETTING,
+    SCREEN_BLUETOOTH
 } screen_id_t;
 
-static screen_id_t current_screen = SCREEN_MAIN;
-static screen_id_t prev_screen    = SCREEN_MAIN;
-
-/* ==================== 手势状态 ==================== */
-#define GS_IDLE     0
-#define GS_PRESSED  1
-static int gs_state = GS_IDLE;
-static int16_t gs_sx, gs_sy, gs_ex, gs_ey, gs_px, gs_py;
-
-/* 动画锁定：切换期间忽略新手势 */
+static screen_id_t current_screen = SCREEN_GENERAL;
+static screen_id_t prev_main_screen = SCREEN_GENERAL;
 static bool is_switching = false;
-static unsigned long switch_unlock_ms = 0;
-#define SWITCH_LOCK_TIME  400   // 400ms 内禁止再次切换
+static uint32_t switch_unlock_ms = 0;
 
-/* Setting 关闭区域：只有从屏幕底部 40% 上滑才关闭 */
-#define SETTING_CLOSE_Y_THRESHOLD  280   // y > 280 视为底部区域
+// ---- Periodic update timing ----
+static uint32_t last_time_ms = 0;
+static uint32_t last_temp_ms = 0;
 
-/* ==================== 显示刷新 ==================== */
-void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p)
+// ---- Formatted string buffers ----
+static char time_buf[6];
+static char temp_buf[16];
+
+// ---- Touch state (updated by my_touchpad_read) ----
+static volatile int16_t g_touch_x = 0, g_touch_y = 0;
+static volatile uint8_t g_touch_pressed = 0;
+
+// ---- Gesture state ----
+typedef enum {
+    GESTURE_IDLE = 0,
+    GESTURE_ACTIVE
+} gesture_state_t;
+static gesture_state_t gs_state = GESTURE_IDLE;
+static int16_t gs_sx, gs_sy, gs_ex, gs_ey;
+
+// ---- NVS preferences ----
+static Preferences prefs;
+
+// ============================================================
+// Display flush callback
+// ============================================================
+static void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p)
 {
-    uint32_t w = (area->x2 - area->x1 + 1);
-    uint32_t h = (area->y2 - area->y1 + 1);
+    uint32_t w = area->x2 - area->x1 + 1;
+    uint32_t h = area->y2 - area->y1 + 1;
 #if (LV_COLOR_16_SWAP != 0)
     gfx->draw16bitBeRGBBitmap(area->x1, area->y1, (uint16_t *)&color_p->full, w, h);
 #else
@@ -87,152 +109,173 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
     lv_disp_flush_ready(disp);
 }
 
-/* ==================== 触摸回调 ==================== */
-void my_touchpad_read(lv_indev_drv_t *indev, lv_indev_data_t *data)
+// ============================================================
+// Touchpad read callback (raw physical coordinates)
+// ============================================================
+static void my_touchpad_read(lv_indev_drv_t *indev, lv_indev_data_t *data)
 {
-    uint8_t n = touch.getPoint(touchX, touchY, touch.getSupportTouchPoint());
+    (void)indev;
+    int16_t tx[5], ty[5];
+    uint8_t n = touch.getPoint(tx, ty, touch.getSupportTouchPoint());
     if (n > 0) {
-        data->point.x = touchX[0];
-        data->point.y = touchY[0];
-        data->state   = LV_INDEV_STATE_PRESSED;
+        g_touch_x = tx[0];
+        g_touch_y = ty[0];
+        g_touch_pressed = 1;
+        data->point.x = tx[0];
+        data->point.y = ty[0];
+        data->state = LV_INDEV_STATE_PRESSED;
     } else {
+        g_touch_pressed = 0;
         data->state = LV_INDEV_STATE_RELEASED;
     }
 }
 
-/* ==================== 带动画的页面切换 ==================== */
-void switch_screen(screen_id_t target_id, lv_scr_load_anim_t anim)
+// ============================================================
+// Screen switching
+// ============================================================
+static void app_switch_screen(app_screen_t target, bool animate)
 {
-    if (is_switching) return;   // 动画期间锁定
-
-    lv_obj_t *target = NULL;
-    switch (target_id) {
-        case SCREEN_MAIN:    target = guider_ui.main;    break;
-        case SCREEN_RANCE:   target = guider_ui.rance;   break;
-        case SCREEN_DETAIL:  target = guider_ui.detail;  break;
-        case SCREEN_SETTING: target = guider_ui.setting; break;
-    }
-    if (target == NULL || target == lv_scr_act()) return;
-
-    /* 执行动画切换 */
-    lv_scr_load_anim(target, anim, 30, 0, false);
-    current_screen = target_id;
-
-    /* 锁定 400ms，防止连续切换 */
-    is_switching = true;
-    switch_unlock_ms = millis() + SWITCH_LOCK_TIME;
-}
-
-/* ==================== 手势处理 ==================== */
-void process_gesture(int16_t dx, int16_t dy)
-{
-    /* 先检查解锁 */
-    if (is_switching && millis() >= switch_unlock_ms) {
-        is_switching = false;
-    }
     if (is_switching) return;
 
+    /* 离开蓝牙页面时清理 */
+    if (current_screen == SCREEN_BLUETOOTH) {
+        bluetooth_manager_exit();
+    }
+
+    lv_obj_t *target_obj = NULL;
+    switch (target) {
+        case APP_SCREEN_GENERAL:   target_obj = guider_ui.general;   break;
+        case APP_SCREEN_RACE:      target_obj = guider_ui.race;      break;
+        case APP_SCREEN_SETTING:   target_obj = guider_ui.setting;   break;
+        case APP_SCREEN_BLUETOOTH: target_obj = guider_ui.bluetooth; break;
+    }
+    if (!target_obj || target_obj == lv_scr_act()) return;
+
+    if (animate && target == APP_SCREEN_SETTING) {
+        lv_scr_load_anim(target_obj, LV_SCR_LOAD_ANIM_MOVE_BOTTOM, ANIM_DURATION_MS, 0, false);
+    } else {
+        lv_scr_load(target_obj);
+    }
+
+    is_switching = true;
+    switch_unlock_ms = millis() + ANIM_DURATION_MS + SWITCH_LOCK_TIME;
+
+    if (target == APP_SCREEN_GENERAL) {
+        current_screen = SCREEN_GENERAL;
+        prev_main_screen = SCREEN_GENERAL;
+    } else if (target == APP_SCREEN_RACE) {
+        current_screen = SCREEN_RACE;
+        prev_main_screen = SCREEN_RACE;
+    } else if (target == APP_SCREEN_BLUETOOTH) {
+        current_screen = SCREEN_BLUETOOTH;
+    } else {
+        current_screen = SCREEN_SETTING;
+    }
+
+    /* 进入蓝牙页面时初始化 */
+    if (target == APP_SCREEN_BLUETOOTH) {
+        bluetooth_manager_enter();
+    }
+
+    if (target != APP_SCREEN_SETTING && target != APP_SCREEN_BLUETOOTH) {
+        prefs.begin("hybridhud", false);
+        prefs.putUChar("last_screen", (uint8_t)current_screen);
+        prefs.end();
+    }
+}
+
+// ============================================================
+// Gesture processing (pure physical coordinates)
+// ============================================================
+static void process_gesture(int16_t dx, int16_t dy, int16_t start_y)
+{
+    if (is_switching) return;
+    if (current_screen == SCREEN_BLUETOOTH) return;  /* 蓝牙页面禁用滑动手势 */
+
     const int16_t THRESH = 30;
+    if (abs((int)dx) < THRESH && abs((int)dy) < THRESH) return;
+    if (abs((int)dy) <= abs((int)dx)) return;
 
-    /* 无效滑动 */
-    if (abs(dx) < THRESH && abs(dy) < THRESH) return;
-
-    if (abs(dx) > abs(dy)) {
-        /* ========== 水平滑动 ========== */
-        if (dx < 0) {   // 左滑 → 新页面从右边进入
-            if (current_screen == SCREEN_MAIN) {
-                switch_screen(SCREEN_RANCE, LV_SCR_LOAD_ANIM_MOVE_LEFT);
-            } else if (current_screen == SCREEN_DETAIL) {
-                switch_screen(SCREEN_MAIN, LV_SCR_LOAD_ANIM_MOVE_LEFT);
-            }
-        } else {        // 右滑 → 新页面从左边进入
-            if (current_screen == SCREEN_MAIN) {
-                switch_screen(SCREEN_DETAIL, LV_SCR_LOAD_ANIM_MOVE_RIGHT);
-            } else if (current_screen == SCREEN_RANCE) {
-                switch_screen(SCREEN_MAIN, LV_SCR_LOAD_ANIM_MOVE_RIGHT);
-            }
+    if (dy > 0) {
+        // Swipe down: open setting from top edge
+        if (current_screen != SCREEN_SETTING && start_y < SETTING_OPEN_Y_THRESHOLD) {
+            prev_main_screen = current_screen;
+            app_switch_screen(APP_SCREEN_SETTING, true);
         }
     } else {
-        /* ========== 垂直滑动 ========== */
-        if (dy > 0) {   // 下滑 → Setting 从底部升起
-            if (current_screen != SCREEN_SETTING) {
-                prev_screen = current_screen;
-                switch_screen(SCREEN_SETTING, LV_SCR_LOAD_ANIM_MOVE_BOTTOM);
-            }
-        } else {        // 上滑
-            if (current_screen == SCREEN_SETTING) {
-                /* 关键：只有从屏幕底部区域上滑才关闭 Setting */
-                if (gs_sy > SETTING_CLOSE_Y_THRESHOLD) {
-                    switch_screen(prev_screen, LV_SCR_LOAD_ANIM_MOVE_TOP);
-                }
-                /* 否则忽略此次上滑（不执行任何操作） */
-            } else if (current_screen != SCREEN_MAIN) {
-                switch_screen(SCREEN_MAIN, LV_SCR_LOAD_ANIM_MOVE_TOP);
-            }
+        // Swipe up: close setting from bottom edge
+        if (current_screen == SCREEN_SETTING && start_y > SETTING_CLOSE_Y_THRESHOLD) {
+            app_switch_screen(
+                (prev_main_screen == SCREEN_RACE) ? APP_SCREEN_RACE : APP_SCREEN_GENERAL, false);
         }
     }
 }
 
-/* ==================== 数据更新 ==================== */
-void update_detail_time()
+// ============================================================
+// Data update helpers
+// ============================================================
+static void update_time_labels(void)
 {
-    if (guider_ui.detail_label_time == NULL) return;
     struct tm timeinfo;
     rtc.getDateTime(&timeinfo);
-    snprintf(time_buf, sizeof(time_buf), "%02d:%02d",
-             timeinfo.tm_hour, timeinfo.tm_min);
-    lv_label_set_text(guider_ui.detail_label_time, time_buf);
+    snprintf(time_buf, sizeof(time_buf), "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
+    if (guider_ui.general_label_time) lv_label_set_text(guider_ui.general_label_time, time_buf);
+    if (guider_ui.race_label_time)    lv_label_set_text(guider_ui.race_label_time, time_buf);
 }
 
-void update_detail_temp()
+static void update_general_temp(void)
 {
-    if (guider_ui.detail_label_temp == NULL) return;
-    float temp = 0.0;
-    bool ok = false;
-    if (qmi.getDataReady()) {
-        temp = qmi.getTemperature_C();
-        ok = true;
-    }
-    if (ok) {
-        snprintf(temp_buf, sizeof(temp_buf), "%.1fC", temp);
-    } else {
-        snprintf(temp_buf, sizeof(temp_buf), "--.-C");
-    }
-    lv_label_set_text(guider_ui.detail_label_temp, temp_buf);
+    if (guider_ui.general_label_temp == NULL) return;
+
+    float temp = 0.0f;
+    bool ok = qmi.getDataReady() && (temp = qmi.getTemperature_C(), true);
+    snprintf(temp_buf, sizeof(temp_buf), ok ? "%.1f" : "--.-", temp);
+    lv_label_set_text(guider_ui.general_label_temp, temp_buf);
 }
 
-void update_detail_slider()
+static void update_general_slider(void)
 {
-    if (guider_ui.detail_slider_energy == NULL) return;
-    int16_t v = lv_slider_get_value(guider_ui.detail_slider_energy);
-    float t = (float)(v + 50) / 100.0f;
-    if (t < 0) t = 0; if (t > 1) t = 1;
-    lv_obj_set_style_bg_color(guider_ui.detail_slider_energy,
-        lv_color_make((uint8_t)(t*255), (uint8_t)((1-t)*255), 0), LV_PART_INDICATOR);
+    if (guider_ui.general_slider_energy == NULL) return;
+
+    int16_t v = lv_slider_get_value(guider_ui.general_slider_energy);
+    float t = constrain((float)(v + 50) / 100.0f, 0.0f, 1.0f);
+    lv_color_t color = lv_color_make((uint8_t)(t * 255), (uint8_t)((1.0f - t) * 255), 0);
+    lv_obj_set_style_bg_color(guider_ui.general_slider_energy, color, LV_PART_INDICATOR);
 }
 
-static void slider_event_cb(lv_event_t *e) { update_detail_slider(); }
+static void slider_event_cb(lv_event_t *e) { (void)e; update_general_slider(); }
 
-/* ==================== Setup ==================== */
+// ============================================================
+// Setup
+// ============================================================
 void setup()
 {
     Serial.begin(115200);
     delay(1500);
+    Serial.println("[HybridHUD] Booting...");
 
+    // Touch controller reset
     pinMode(TP_RESET, OUTPUT);
-    digitalWrite(TP_RESET, LOW); delay(30);
-    digitalWrite(TP_RESET, HIGH); delay(50);
+    digitalWrite(TP_RESET, LOW);
+    delay(30);
+    digitalWrite(TP_RESET, HIGH);
+    delay(50);
 
+    // I2C bus
     Wire.begin(IIC_SDA, IIC_SCL);
+
+    // Touch init
     touch.setPins(TP_RESET, TP_INT);
     touch.begin(Wire, 0x5A, IIC_SDA, IIC_SCL);
     touch.setMaxCoordinates(LCD_WIDTH, LCD_HEIGHT);
     touch.setMirrorXY(true, true);
 
+    // RTC init
     rtc.begin(Wire, IIC_SDA, IIC_SCL);
-    // rtc.setDateTime(2026, 4, 25, 17, 0, 0);
 
+    // QMI8658 IMU init
     if (!qmi.begin(Wire, 0x6B, IIC_SDA, IIC_SCL)) {
+        Serial.println("[WARN] QMI8658 init failed");
     } else {
         qmi.configAccelerometer(SensorQMI8658::ACC_RANGE_4G,
                                 SensorQMI8658::ACC_ODR_1000Hz,
@@ -240,14 +283,25 @@ void setup()
         qmi.enableAccelerometer();
     }
 
+    // Display init
+    Serial.println("[DBG] gfx begin...");
     gfx->begin();
+
+    // LVGL init
+    Serial.println("[DBG] lv_init...");
     lv_init();
 
-    uint32_t buf_size = (LCD_WIDTH * LCD_HEIGHT) / 4;
+    uint32_t buf_size = LCD_WIDTH * 40;  /* 40行缓冲区，稳定运行方案 */
     buf1 = (lv_color_t *)heap_caps_malloc(buf_size * sizeof(lv_color_t), MALLOC_CAP_DMA);
     buf2 = (lv_color_t *)heap_caps_malloc(buf_size * sizeof(lv_color_t), MALLOC_CAP_DMA);
+    if (!buf1 || !buf2) {
+        Serial.println("[FATAL] DMA buffer allocation failed");
+        while (1) { delay(100); }
+    }
     lv_disp_draw_buf_init(&draw_buf, buf1, buf2, buf_size);
 
+    // Display driver — 无旋转
+    Serial.println("[DBG] Register display driver...");
     static lv_disp_drv_t disp_drv;
     lv_disp_drv_init(&disp_drv);
     disp_drv.hor_res = LCD_WIDTH;
@@ -256,65 +310,113 @@ void setup()
     disp_drv.draw_buf = &draw_buf;
     lv_disp_drv_register(&disp_drv);
 
+    // Input device (touch) driver
+    Serial.println("[DBG] Register touch driver...");
     static lv_indev_drv_t indev_drv;
     lv_indev_drv_init(&indev_drv);
     indev_drv.type = LV_INDEV_TYPE_POINTER;
     indev_drv.read_cb = my_touchpad_read;
     lv_indev_drv_register(&indev_drv);
 
-    /* 创建所有屏幕 */
-    setup_ui(&guider_ui);
-    setup_scr_rance(&guider_ui);
-    setup_scr_detail(&guider_ui);
+    // Init UI screen delete flags
+    Serial.println("[DBG] init_scr_del_flag...");
+    init_scr_del_flag(&guider_ui);
+
+    // Build all screens
+    Serial.println("[DBG] setup_scr_general...");
+    setup_scr_general(&guider_ui);
+    Serial.println("[DBG] setup_scr_race...");
+    setup_scr_race(&guider_ui);
+    Serial.println("[DBG] setup_scr_setting...");
     setup_scr_setting(&guider_ui);
+    Serial.println("[DBG] setup_scr_bluetooth...");
+    setup_scr_bluetooth(&guider_ui);
+    Serial.println("[DBG] All screens built OK");
 
-    current_screen = SCREEN_MAIN;
+    // Disable scrolling on main screens
+    lv_obj_clear_flag(guider_ui.general, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_CHAIN);
+    lv_obj_clear_flag(guider_ui.race,    LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_CHAIN);
+    Serial.println("[DBG] Scroll flags cleared");
 
-    /* detail Slider 事件 */
-    if (guider_ui.detail_slider_energy != NULL) {
-        update_detail_slider();
-        lv_obj_add_event_cb(guider_ui.detail_slider_energy,
+    // Init managers
+    Serial.println("[DBG] Init setting_manager...");
+    setting_manager_init(&guider_ui);
+    setting_manager_set_switch_cb(app_switch_screen);
+
+    Serial.println("[DBG] Init bluetooth_manager...");
+    bluetooth_manager_init(&guider_ui);
+    bluetooth_manager_set_switch_cb(app_switch_screen);
+
+    // Slider color callback
+    if (guider_ui.general_slider_energy != NULL) {
+        update_general_slider();
+        lv_obj_add_event_cb(guider_ui.general_slider_energy,
                             slider_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
     }
+
+    // Restore last main screen from NVS
+    Serial.println("[DBG] Load NVS...");
+    prefs.begin("hybridhud", true);
+    uint8_t last = prefs.getUChar("last_screen", SCREEN_GENERAL);
+    prefs.end();
+
+    Serial.println("[DBG] Load initial screen...");
+    if (last == SCREEN_RACE) {
+        current_screen = SCREEN_RACE;
+        prev_main_screen = SCREEN_RACE;
+        lv_scr_load(guider_ui.race);
+    } else {
+        current_screen = SCREEN_GENERAL;
+        prev_main_screen = SCREEN_GENERAL;
+        lv_scr_load(guider_ui.general);
+    }
+
+    Serial.println("[HybridHUD] Ready");
 }
 
-/* ==================== Loop ==================== */
+// ============================================================
+// Main loop
+// ============================================================
 void loop()
 {
-    /* 检查动画锁是否到期 */
-    if (is_switching && millis() >= switch_unlock_ms) {
+    uint32_t now = millis();
+
+    // Clear switch lock after animation completes
+    if (is_switching && now >= switch_unlock_ms) {
         is_switching = false;
     }
 
-    /* 手势检测 */
-    uint8_t n = touch.getPoint(touchX, touchY, touch.getSupportTouchPoint());
-
-    if (gs_state == GS_IDLE && n > 0) {
-        gs_sx = gs_px = touchX[0];
-        gs_sy = gs_py = touchY[0];
-        gs_state = GS_PRESSED;
-    }
-    else if (gs_state == GS_PRESSED) {
-        if (n > 0) {
-            gs_px = touchX[0];
-            gs_py = touchY[0];
-        } else {
-            gs_ex = gs_px; gs_ey = gs_py;
-            int16_t dx = gs_ex - gs_sx;
-            int16_t dy = gs_ey - gs_sy;
-            process_gesture(dx, dy);
-            gs_state = GS_IDLE;
-        }
-    }
-
-    /* 数据更新（只在 detail 页） */
-    unsigned long now = millis();
-    if (current_screen == SCREEN_DETAIL) {
-        if (now - last_time_ms >= 1000) { last_time_ms = now; update_detail_time(); }
-        if (now - last_temp_ms >= 3000) { last_temp_ms = now; update_detail_temp(); }
-    }
-
+    // LVGL heartbeat
     lv_tick_inc(5);
     lv_timer_handler();
+
+    // Bluetooth scan result refresh
+    bluetooth_manager_update();
+
+    // Gesture detection using global touch coordinates
+    if (g_touch_pressed) {
+        if (gs_state == GESTURE_IDLE) {
+            gs_sx = g_touch_x; gs_sy = g_touch_y;
+            gs_ex = g_touch_x; gs_ey = g_touch_y;
+            gs_state = GESTURE_ACTIVE;
+        } else {
+            gs_ex = g_touch_x; gs_ey = g_touch_y;
+        }
+    } else if (gs_state == GESTURE_ACTIVE) {
+        process_gesture(gs_ex - gs_sx, gs_ey - gs_sy, gs_sy);
+        gs_state = GESTURE_IDLE;
+    }
+
+    // Periodic updates
+    if (now - last_time_ms >= TIME_UPDATE_INTERVAL_MS) {
+        last_time_ms = now;
+        update_time_labels();
+    }
+
+    if (now - last_temp_ms >= TEMP_UPDATE_INTERVAL_MS) {
+        last_temp_ms = now;
+        update_general_temp();
+    }
+
     delay(5);
 }

@@ -18,44 +18,59 @@ extern "C" {
 typedef struct
 {
   
-	lv_obj_t *main;
-	bool main_del;
-	lv_obj_t *main_label_1;
-	lv_obj_t *main_label_2;
-	lv_obj_t *main_label_3;
-	lv_obj_t *main_label_4;
-	lv_obj_t *main_arc_speed2;
-	lv_obj_t *main_arc_speed1;
-	lv_obj_t *rance;
-	bool rance_del;
-	lv_obj_t *rance_label_1;
-	lv_obj_t *detail;
-	bool detail_del;
-	lv_obj_t *detail_arc_rpm;
-	lv_obj_t *detail_arc_speed;
-	lv_obj_t *detail_arc_energy;
-	lv_obj_t *detail_arc_oil;
-	lv_obj_t *detail_cont_1;
-	lv_obj_t *detail_label_rpm_number;
-	lv_obj_t *detail_label_time;
-	lv_obj_t *detail_label_temp;
-	lv_obj_t *detail_slider_energy;
-	lv_obj_t *detail_label_speed_number;
-	lv_obj_t *detail_label_energy_number;
-	lv_obj_t *detail_label_energy_number_2;
-	lv_obj_t *detail_label_oil_number;
-	lv_obj_t *detail_label_trip;
-	lv_obj_t *detail_img_temp;
-	lv_obj_t *detail_label_1;
-	lv_obj_t *detail_label_2;
-	lv_obj_t *detail_label_3;
-	lv_obj_t *detail_label_4;
-	lv_obj_t *detail_label_5;
-	lv_obj_t *detail_label_6;
-	lv_obj_t *detail_label_7;
+	lv_obj_t *general;
+	bool general_del;
+	lv_obj_t *general_arc_rpm;
+	lv_obj_t *general_arc_speed;
+	lv_obj_t *general_arc_energy;
+	lv_obj_t *general_arc_oil;
+	lv_obj_t *general_cont_1;
+	lv_obj_t *general_label_rpm_number;
+	lv_obj_t *general_label_time;
+	lv_obj_t *general_label_temp;
+	lv_obj_t *general_slider_energy;
+	lv_obj_t *general_label_speed_number;
+	lv_obj_t *general_label_energy_number;
+	lv_obj_t *general_label_energy_number_2;
+	lv_obj_t *general_label_oil_number;
+	lv_obj_t *general_label_trip;
+	lv_obj_t *general_img_temp;
+	lv_obj_t *general_label_1;
+	lv_obj_t *general_label_2;
+	lv_obj_t *general_label_3;
+	lv_obj_t *general_label_4;
+	lv_obj_t *general_label_5;
+	lv_obj_t *general_label_6;
+	lv_obj_t *general_label_7;
+	lv_obj_t *race;
+	bool race_del;
+	lv_obj_t *race_arc_4;
+	lv_obj_t *race_arc_3;
+	lv_obj_t *race_arc_2;
+	lv_obj_t *race_arc_1;
+	lv_obj_t *race_label_time;
+	lv_obj_t *race_label_4;
+	lv_obj_t *race_label_3;
+	lv_obj_t *race_label_2;
 	lv_obj_t *setting;
 	bool setting_del;
 	lv_obj_t *setting_label_1;
+	lv_obj_t *setting_btn_Bluetooth;
+	lv_obj_t *setting_btn_Bluetooth_label;
+	lv_obj_t *setting_btn_Race;
+	lv_obj_t *setting_btn_Race_label;
+	lv_obj_t *setting_btn_General;
+	lv_obj_t *setting_btn_General_label;
+	lv_obj_t *bluetooth;
+	bool bluetooth_del;
+	lv_obj_t *bluetooth_bt_label_title;
+	lv_obj_t *bluetooth_btn_back;
+	lv_obj_t *bluetooth_btn_back_label;
+	lv_obj_t *bluetooth_bt_sw_enable;
+	lv_obj_t *bluetooth_bt_list_devices;
+	lv_obj_t *bluetooth_bt_list_devices_item0;
+	lv_obj_t *bluetooth_bt_btn_scan;
+	lv_obj_t *bluetooth_bt_btn_scan_label;
 }lv_ui;
 
 typedef void (*ui_setup_scr_t)(lv_ui * ui);
@@ -79,19 +94,21 @@ void init_keyboard(lv_ui *ui);
 extern lv_ui guider_ui;
 
 
-void setup_scr_main(lv_ui *ui);
-void setup_scr_rance(lv_ui *ui);
-void setup_scr_detail(lv_ui *ui);
+void setup_scr_general(lv_ui *ui);
+void setup_scr_race(lv_ui *ui);
 void setup_scr_setting(lv_ui *ui);
+void setup_scr_bluetooth(lv_ui *ui);
 LV_IMG_DECLARE(_tempunit_alpha_20x19);
 
-LV_FONT_DECLARE(lv_font_montserratMedium_60)
-LV_FONT_DECLARE(lv_font_montserratMedium_70)
-LV_FONT_DECLARE(lv_font_montserratMedium_20)
-LV_FONT_DECLARE(lv_font_montserratMedium_30)
-LV_FONT_DECLARE(lv_font_montserratMedium_16)
 LV_FONT_DECLARE(lv_font_montserratMedium_26)
+LV_FONT_DECLARE(lv_font_montserratMedium_30)
 LV_FONT_DECLARE(lv_font_montserratMedium_24)
+LV_FONT_DECLARE(lv_font_montserratMedium_70)
+LV_FONT_DECLARE(lv_font_montserratMedium_60)
+LV_FONT_DECLARE(lv_font_montserratMedium_20)
+LV_FONT_DECLARE(lv_font_montserratMedium_36)
+LV_FONT_DECLARE(lv_font_montserratMedium_16)
+LV_FONT_DECLARE(lv_font_montserratMedium_12)
 
 
 #ifdef __cplusplus
