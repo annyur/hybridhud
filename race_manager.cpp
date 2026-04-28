@@ -64,6 +64,9 @@ static void update_g_force(uint32_t now_ms)
 
     lv_obj_set_pos(s_ui->race_label_G_point, px, py);
 
+    /* 强制标记整个 race 页面重绘 — 绕过 LVGL 局部刷新在重叠透明对象时的计算错误 */
+    lv_obj_invalidate(s_ui->race);
+
     /* ---- 四个方向 G 值（只在变化时更新，减少重绘） ---- */
     char buf[8];
     static char s_buf_top[8]   = "";
@@ -117,15 +120,13 @@ void race_manager_init(lv_ui *ui)
     calibrate_g();
 }
 
-/* 去掉 label 黑色背景，防止在 meter 上移动时花屏 */
+/* 去掉 label 背景/边框/阴影 */
 static void clear_label_bg(lv_obj_t *obj)
 {
     if (!obj) return;
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(obj, 0, LV_PART_MAIN);
     lv_obj_set_style_shadow_width(obj, 0, LV_PART_MAIN);
-    /* 确保文本在最上层渲染 */
-    lv_obj_set_style_text_opa(obj, LV_OPA_COVER, LV_PART_MAIN);
 }
 
 void race_manager_enter(void)
@@ -133,15 +134,13 @@ void race_manager_enter(void)
     s_active = true;
     calibrate_g();
 
-    /* 去掉 G 值标签黑色背景，防止移动时花屏 */
-    clear_label_bg(s_ui->race_label_G_top);
-    clear_label_bg(s_ui->race_label_G_down);
-    clear_label_bg(s_ui->race_label_G_right);
-    clear_label_bg(s_ui->race_label_left);
-    clear_label_bg(s_ui->race_label_G_point);
+    /* 关掉图片圆角裁切 — GUI Guider 默认开启，频繁刷新时导致重绘花屏 */
+    if (s_ui->race_img_3) {
+        lv_obj_set_style_clip_corner(s_ui->race_img_3, false, LV_PART_MAIN);
+    }
 
-    /* 确保 label_G_point 在最上层 */
-    if (s_ui && s_ui->race_label_G_point) {
+    /* 确保 point 在最上层 */
+    if (s_ui->race_label_G_point) {
         lv_obj_move_foreground(s_ui->race_label_G_point);
     }
 }

@@ -342,10 +342,12 @@ void setup()
         current_screen = SCREEN_RACE;
         prev_main_screen = SCREEN_RACE;
         lv_scr_load(guider_ui.race);
+        race_manager_enter();
     } else {
         current_screen = SCREEN_GENERAL;
         prev_main_screen = SCREEN_GENERAL;
         lv_scr_load(guider_ui.general);
+        general_manager_enter();
     }
 
     Serial.println("[HybridHUD] Ready");
