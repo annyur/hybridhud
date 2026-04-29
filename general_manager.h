@@ -4,6 +4,8 @@
 
 #include <Arduino.h>
 #include "src/gui_guider.h"
+#include <SensorQMI8658.hpp>   // 添加
+#include <SensorPCF85063.hpp>  // 添加
 
 #ifdef __cplusplus
 extern "C" {

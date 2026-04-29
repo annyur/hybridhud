@@ -29,8 +29,6 @@ static BLEClient *s_client = NULL;
 static bool s_is_connected = false, s_ble_enabled = false;
 static char s_conn_addr[BT_ADDR_LEN] = "", s_conn_name[BT_NAME_LEN] = "";
 static int s_connecting_idx = -1, s_target_idx = -1, s_state = 0;
-static bool s_auto_conn_after_scan = false;
-static char s_auto_conn_name[BT_NAME_LEN] = "";
 static BLERemoteCharacteristic *s_write_char = NULL, *s_read_char = NULL;
 
 /* ---- 原始数据缓冲 (供 obd_manager 读取) ---- */
@@ -106,13 +104,17 @@ static void do_connect(void){
 }
 static void do_auto_reconnect(void){
     char a[BT_ADDR_LEN],n[BT_NAME_LEN];uint8_t t=BLE_ADDR_TYPE_PUBLIC;
-    if(!load_last_device(a,n,&t)){s_state=3;return;}
+    if(!load_last_device(a,n,&t)){s_state=0;return;}   /* 无记录直接结束，不切 scan */
     do_disconnect(true);delay(100);s_client=BLEDevice::createClient();s_client->setClientCallbacks(new BTClientCB());
     if(s_client->connect(BLEAddress(a),(esp_ble_addr_type_t)t)){
         strncpy(s_conn_addr,a,BT_ADDR_LEN-1);s_conn_addr[BT_ADDR_LEN-1]=0;
         strncpy(s_conn_name,n,BT_NAME_LEN-1);s_conn_name[BT_NAME_LEN-1]=0;
         s_is_connected=true;discover_services();s_state=0;
-    }else{if(s_client){delete s_client;s_client=NULL;}strncpy(s_auto_conn_name,n,BT_NAME_LEN-1);s_auto_conn_name[BT_NAME_LEN-1]=0;s_auto_conn_after_scan=true;s_state=3;}
+    }else{
+        if(s_client){delete s_client;s_client=NULL;}
+        /* 地址直连失败即放弃，不再扫描匹配名称回连 */
+        s_state=0;
+    }
     refresh_device_list();
 }
 class BTScanCB : public BLEAdvertisedDeviceCallbacks{
@@ -185,7 +187,7 @@ void bluetooth_manager_enter(void){
 }
 void bluetooth_manager_exit(void){if(s_scanning&&pBLEScan){pBLEScan->stop();s_scanning=false;}}
 void bluetooth_manager_update(void){
-    if(s_scan_done){s_scan_done=false;refresh_device_list();if(s_auto_conn_after_scan){s_auto_conn_after_scan=false;for(int i=0;i<s_device_count;i++){if(strcmp(s_devices[i].name,s_auto_conn_name)==0){s_connecting_idx=i;s_target_idx=i;s_state=4;refresh_device_list();break;}}s_auto_conn_name[0]=0;}}
+    if(s_scan_done){s_scan_done=false;refresh_device_list();}
     switch(s_state){case 1:BLEDevice::init("HybridHUD");s_ble_enabled=true;s_state=2;break;case 2:do_auto_reconnect();break;case 3:start_scan();break;case 4:do_connect();break;default:break;}
 }
 bool bluetooth_is_connected(void){return s_is_connected;}

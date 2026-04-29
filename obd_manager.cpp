@@ -1,6 +1,7 @@
 /* obd_manager.cpp — OBD数据轮询与缓存模块 v1.0
- * 职责: PID循环查询 + ECU DID扫描 + 数据解析 + 缓存池
+ * 职责: PID循环查询 + ECU DID扫描调度 + 数据解析 + 缓存池
  * 依赖: bluetooth_manager (提供BLE连接和原始数据收发)
+ *         ecu.cpp (提供ECU配置表与DID解析器)
  */
 #include "obd_manager.h"
 #include "bluetooth_manager.h"
@@ -28,40 +29,6 @@ static const char* s_pid_names[PID_COUNT] = {
     "MIL", "BattV", "Dist", "MAP", "IAT",
     "Throttle", "AbsLoad", "Torque%", "RefTorque", "Odometer"
 };
-
-/* ================================================================
- *  ECU DID扫描配置
- * ================================================================ */
-typedef void (*did_parser_t)(uint16_t did, const uint8_t* d, int len);
-struct EcuConfig {
-    const char* label;
-    uint16_t tx_addr, rx_addr;
-    const uint16_t* dids;
-    int did_count;
-    did_parser_t parser;
-    bool needs_session;
-};
-
-static const uint16_t s_bms_dids[] = {0xF250,0xF251,0xF252,0xF253,0xF254,0xF255,0xF229,0xF228};
-static const uint16_t s_sgcm_dids[] = {0x0808,0x0809,0x0812,0x080A};
-static const uint16_t s_hpcm_scan_dids[] = {0xF100,0xF101,0xF102,0xF103};
-static const uint16_t s_becm_scan_dids[] = {0xF220,0xF221,0xF222,0xF223};
-static const uint16_t s_bms_scan_dids[] = {0xF210,0xF211,0xF212,0xF213,0xF214,0xF215,0xF216,0xF217};
-
-static void parse_bms_did(uint16_t did,const uint8_t*d,int len);
-static void parse_sgcm_did(uint16_t did,const uint8_t*d,int len);
-static void parse_hpcm_scan_did(uint16_t did,const uint8_t*d,int len);
-static void parse_becm_scan_did(uint16_t did,const uint8_t*d,int len);
-static void parse_bms_scan_did(uint16_t did,const uint8_t*d,int len);
-
-static const EcuConfig s_ecu_list[] = {
-    {"BMS",      0x7A1, 0x7A9, s_bms_dids, 8, parse_bms_did, false},
-    {"SGCM",     0x7E7, 0x7EF, s_sgcm_dids, 4, parse_sgcm_did, false},
-    {"HPCM",     0x7E0, 0x7E8, s_hpcm_scan_dids, 4, parse_hpcm_scan_did, false},
-    {"BECM",     0x7E4, 0x7EC, s_becm_scan_dids, 4, parse_becm_scan_did, false},
-    {"BMS_SCAN", 0x7A1, 0x7A9, s_bms_scan_dids, 8, parse_bms_scan_did, false},
-};
-#define ECU_COUNT (sizeof(s_ecu_list)/sizeof(s_ecu_list[0]))
 
 /* ================================================================
  *  模块状态
@@ -182,52 +149,11 @@ static bool parse_pid_response(const char* rx, int pid_idx) {
 }
 
 /* ================================================================
- *  DID解析器
- * ================================================================ */
-static void parse_sgcm_did(uint16_t did, const uint8_t* d, int len) {
-    switch(did) {
-        case 0x0808: if (len >= 2) { s_data.sgcm_rpm = ((uint16_t)d[0]<<8)|d[1]; } break;
-        case 0x0809: if (len >= 2) { s_data.sgcm_current = (((uint16_t)d[0]<<8)|d[1]) * 0.01f; } break;
-        case 0x0812: if (len >= 2) { s_data.sgcm_rated = ((uint16_t)d[0]<<8)|d[1]; } break;
-        case 0x080A: if (len >= 2) { s_data.sgcm_current_b = (((uint16_t)d[0]<<8)|d[1]) * 0.01f; } break;
-    }
-}
-
-static void parse_bms_did(uint16_t did, const uint8_t* d, int len) {
-    switch(did) {
-        case 0xF228: if (len >= 2) { s_data.bms_total_v = (((uint16_t)d[0]<<8)|d[1]) * 0.1f; } break;
-        case 0xF250: if (len >= 2) { s_data.bms_max_cell = (((uint16_t)d[0]<<8)|d[1]) * 0.001f; } break;
-        case 0xF251: if (len >= 2) { s_data.bms_min_cell = (((uint16_t)d[0]<<8)|d[1]) * 0.001f; } break;
-        case 0xF252: if (len >= 1) { s_data.bms_max_temp = (int)d[0] - 40; } break;
-        case 0xF253: if (len >= 1) { s_data.bms_min_temp = (int)d[0] - 40; } break;
-        case 0xF254: if (len >= 1) { s_data.bms_max_pos = d[0]; } break;
-        case 0xF255: if (len >= 1) { s_data.bms_min_pos = d[0]; } break;
-        case 0xF229: if (len >= 2) { s_data.bms_remain_wh = ((uint16_t)d[0]<<8)|d[1]; } break;
-    }
-}
-
-static void parse_hpcm_scan_did(uint16_t did, const uint8_t* d, int len) {
-    Serial.printf("[HPCM] DID=0x%04X len=%d raw=0x", did, len);
-    for (int i = 0; i < len; i++) Serial.printf("%02X", d[i]);
-    Serial.println();
-}
-
-static void parse_becm_scan_did(uint16_t did, const uint8_t* d, int len) {
-    Serial.printf("[BECM] DID=0x%04X len=%d raw=0x", did, len);
-    for (int i = 0; i < len; i++) Serial.printf("%02X", d[i]);
-    Serial.println();
-}
-
-static void parse_bms_scan_did(uint16_t did, const uint8_t* d, int len) {
-    Serial.printf("[BMS-SCAN] DID=0x%04X len=%d raw=0x", did, len);
-    for (int i = 0; i < len; i++) Serial.printf("%02X", d[i]);
-    Serial.println();
-}
-
-/* ================================================================
  *  帧解析 (从CAN响应中提取DID数据)
  * ================================================================ */
-static void parse_did_frames(const char* rx, uint16_t expect_did, uint16_t expect_rx, did_parser_t parser) {
+static void parse_did_frames(const char* rx, uint16_t expect_did, uint16_t expect_rx,
+                             did_parser_t parser, struct OBDData* out)
+{
     char buf[512]; strncpy(buf, rx, sizeof(buf)-1); buf[sizeof(buf)-1] = '\0';
     char* tok = strtok(buf, " \r\n>");
     while (tok) {
@@ -247,7 +173,7 @@ static void parse_did_frames(const char* rx, uint16_t expect_did, uint16_t expec
         if (data_len <= 0) { tok = strtok(NULL, " \r\n>"); continue; }
         if (bytes[1] == 0x62) {
             uint16_t rdid = ((uint16_t)bytes[2] << 8) | bytes[3];
-            if (rdid == expect_did) { parser(rdid, &bytes[4], data_len); return; }
+            if (rdid == expect_did) { parser(rdid, &bytes[4], data_len, out); return; }
         }
         tok = strtok(NULL, " \r\n>");
     }
@@ -320,13 +246,14 @@ static void did_burst_poll(uint32_t now) {
                 }
                 if (bluetooth_manager_rx_ready() || (int)(now - s_burst_cmd_ms) > 1200) {
                     lrx("[ECU]", s_burst_did);
-                    if (bluetooth_manager_rx_ready()) 
-                        parse_did_frames(bluetooth_manager_rx_buf(), ecu->dids[s_burst_did], ecu->rx_addr, ecu->parser);
+                    if (bluetooth_manager_rx_ready())
+                        parse_did_frames(bluetooth_manager_rx_buf(), ecu->dids[s_burst_did],
+                                         ecu->rx_addr, ecu->parser, &s_data);
                     s_burst_did++; s_pid_sent = false;
                 }
             } else {
                 s_burst_ecu++; s_pid_sent = false;
-                if (s_burst_ecu < (int)ECU_COUNT) s_burst_phase = 0;
+                if (s_burst_ecu < ECU_COUNT) s_burst_phase = 0;
                 else s_burst_phase = 2;
             }
             break;
@@ -398,7 +325,6 @@ void obd_manager_init(void) {
     s_pid_idx = 0; s_pid_sent = false;
     s_in_burst = false; s_burst_phase = 0;
     memset(&s_data, 0, sizeof(s_data));
-    // 注册蓝牙连接回调
     bluetooth_manager_set_conn_cb(on_bt_conn);
 }
 
@@ -423,13 +349,11 @@ void obd_manager_update(void) {
 
     uint32_t now = millis();
 
-    // 先完成ELM初始化
     if (!s_init_done) {
         elm_init_poll();
         return;
     }
 
-    // ECU DID扫描优先（每5秒一次）
     if (!s_in_burst && !s_pid_sent && (int)(now - s_last_burst_ms) > BURST_INTERVAL_MS) {
         s_in_burst = true; s_burst_phase = 0; s_burst_ecu = 0; s_burst_did = 0; s_pid_sent = false;
         Serial.println("[BURST] === start ===");
@@ -440,7 +364,6 @@ void obd_manager_update(void) {
         return;
     }
 
-    // 标准PID轮询
     pid_poll(now);
 }
 
@@ -448,7 +371,6 @@ const struct OBDData* obd_manager_get_data(void) {
     return &s_data;
 }
 
-/* 调试接口: 发送原始命令并等待响应 */
 bool obd_manager_send_raw(const char* cmd, char* out, int out_len, int timeout_ms) {
     if (!bluetooth_is_connected()) return false;
     bluetooth_manager_rx_clear();

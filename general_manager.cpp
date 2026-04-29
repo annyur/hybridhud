@@ -1,24 +1,20 @@
 /* general_manager.cpp — general界面数据绑定
  * 数据来源: obd_manager_get_data() (OBD实时数据)
- * 显示组件:
- *   - label_rpm_number + arc_rpm (发动机转速)
- *   - label_speed_number + arc_speed (车速, 原始ABS车速)
- *   - label_oil_number + arc_oil (油温/冷却液温度)
- *   - label_energy_number + slider_energy (瞬时功率)
- *   - label_energy_number_2 + arc_energy (瞬时功率)
- *   - label_1 (总里程), label_2 (平均功率), label_3 (平均油耗)
- *   - label_time (RTC时间), label_temp (环境温度)
  */
 #include "general_manager.h"
 #include "obd_manager.h"
+#include "bluetooth_manager.h"
 #include "src/gui_guider.h"
 #include <Arduino.h>
+#include <SensorQMI8658.hpp>
+#include <SensorPCF85063.hpp>
 
 /* 测试模式：1=模拟数据，0=真实OBD */
 #define GENERAL_TEST_MODE 0
 
 extern SensorQMI8658 qmi;
 extern SensorPCF85063 rtc;
+extern bool bluetooth_is_connected(void);
 
 static lv_ui *s_ui = NULL;
 static bool s_active = false;
@@ -29,6 +25,7 @@ static uint32_t s_last_temp_ms = 0;
 static uint32_t s_last_arc_ms = 0;
 static uint32_t s_last_avg_ms = 0;
 static uint32_t s_last_odometer_ms = 0;
+static uint32_t s_last_blink_ms = 0;
 
 /* 能量数据 */
 static float s_slider_power = 0.0f;
@@ -45,6 +42,30 @@ static float s_avg_fuel = 0.0f;
 /* 车辆总里程 / 行程里程 */
 static float s_odometer = 0.0f;
 static float s_trip_distance = 0.0f;
+
+/* ================================================================
+ *  蓝牙未连接闪烁效果 (slider_energy)
+ * ================================================================ */
+static void update_slider_blink(uint32_t now_ms)
+{
+    if (!s_ui || !s_ui->general_slider_energy) return;
+
+    if (!bluetooth_is_connected()) {
+        /* 三角波渐隐闪烁，周期 800ms，透明度 60~255 */
+        uint32_t phase = now_ms % 800;
+        lv_opa_t opa = (phase < 400)
+            ? (lv_opa_t)(60 + 195 * phase / 400)
+            : (lv_opa_t)(255 - 195 * (phase - 400) / 400);
+
+        lv_obj_set_style_bg_color(s_ui->general_slider_energy,
+                                  lv_color_hex(0xFF0000), LV_PART_INDICATOR);
+        lv_obj_set_style_bg_opa(s_ui->general_slider_energy, opa, LV_PART_INDICATOR);
+    } else {
+        /* 已连接：恢复不透明，颜色由 update_slider_display 接管 */
+        lv_obj_set_style_bg_opa(s_ui->general_slider_energy,
+                                LV_OPA_COVER, LV_PART_INDICATOR);
+    }
+}
 
 /* ================================================================
  *  能量显示更新
@@ -67,11 +88,14 @@ static void update_slider_display(void)
             lv_bar_set_start_value(s_ui->general_slider_energy, mapped, LV_ANIM_OFF);
             lv_bar_set_value(s_ui->general_slider_energy, center, LV_ANIM_OFF);
         }
-        lv_color_t color;
-        if (s_slider_power < 0) color = lv_color_hex(0x00FF00);
-        else if (s_slider_power < 50.0f) color = lv_color_hex(0xFF6500);
-        else color = lv_color_hex(0xFF0000);
-        lv_obj_set_style_bg_color(s_ui->general_slider_energy, color, LV_PART_INDICATOR);
+        /* 未连接蓝牙时不覆盖颜色（由 update_slider_blink 控制红色闪烁） */
+        if (bluetooth_is_connected()) {
+            lv_color_t color;
+            if (s_slider_power < 0) color = lv_color_hex(0x00FF00);
+            else if (s_slider_power < 50.0f) color = lv_color_hex(0xFF6500);
+            else color = lv_color_hex(0xFF0000);
+            lv_obj_set_style_bg_color(s_ui->general_slider_energy, color, LV_PART_INDICATOR);
+        }
     }
     s_power_sum += s_slider_power;
     s_power_count++;
@@ -160,7 +184,6 @@ static void update_obd_display(uint32_t now_ms)
     const struct OBDData* d = obd_manager_get_data();
 
 #if GENERAL_TEST_MODE
-    /* 测试模式：模拟数据 */
     static int test_rpm = 0;
     static int test_speed = 0;
     test_rpm = (test_rpm + 80) % 8000;
@@ -169,52 +192,32 @@ static void update_obd_display(uint32_t now_ms)
     int speed = test_speed;
     int oil = 75 + (int)(15.0f * sinf((float)now_ms / 2000.0f));
 #else
-    /* 真实OBD数据 */
     int rpm = d->rpm;
-    int speed = d->speed;      /* ABS原始车速，不加补偿 */
-    int oil = d->oil;          /* 机油温度，优先013C，无效时用coolant */
-    if (oil < -40) oil = d->coolant;  /* 机油温度无效时退而求其次 */
+    int speed = d->speed;
+    int oil = d->oil;
+    if (oil < -40) oil = d->coolant;
 #endif
 
-    /* ---- RPM: label_rpm_number + arc_rpm ---- */
-    if (s_ui->general_arc_rpm) {
-        lv_arc_set_value(s_ui->general_arc_rpm, rpm);
-    }
+    if (s_ui->general_arc_rpm)     lv_arc_set_value(s_ui->general_arc_rpm, rpm);
     if (s_ui->general_label_rpm_number) {
-        if (rpm == 0) {
-            lv_label_set_text(s_ui->general_label_rpm_number, "");
-        } else {
-            char buf[8];
-            snprintf(buf, sizeof(buf), "%d", rpm);
-            lv_label_set_text(s_ui->general_label_rpm_number, buf);
-        }
+        if (rpm == 0) lv_label_set_text(s_ui->general_label_rpm_number, "");
+        else { char buf[8]; snprintf(buf, sizeof(buf), "%d", rpm); lv_label_set_text(s_ui->general_label_rpm_number, buf); }
     }
 
-    /* ---- Speed: label_speed_number + arc_speed ---- */
-    if (s_ui->general_arc_speed) {
-        lv_arc_set_value(s_ui->general_arc_speed, speed);
-    }
+    if (s_ui->general_arc_speed)   lv_arc_set_value(s_ui->general_arc_speed, speed);
     if (s_ui->general_label_speed_number) {
-        char buf[8];
-        snprintf(buf, sizeof(buf), "%d", speed);
+        char buf[8]; snprintf(buf, sizeof(buf), "%d", speed);
         lv_label_set_text(s_ui->general_label_speed_number, buf);
     }
 
-    /* ---- Oil: label_oil_number + arc_oil ---- */
-    if (s_ui->general_arc_oil) {
-        lv_arc_set_value(s_ui->general_arc_oil, oil);
-    }
+    if (s_ui->general_arc_oil)     lv_arc_set_value(s_ui->general_arc_oil, oil);
     if (s_ui->general_label_oil_number) {
         char buf[8];
-        if (oil >= -40) {
-            snprintf(buf, sizeof(buf), "%d", oil);
-        } else {
-            snprintf(buf, sizeof(buf), "--");
-        }
+        if (oil >= -40) snprintf(buf, sizeof(buf), "%d", oil);
+        else snprintf(buf, sizeof(buf), "--");
         lv_label_set_text(s_ui->general_label_oil_number, buf);
     }
 
-    /* 强制重绘 */
     lv_obj_invalidate(s_ui->general);
 }
 
@@ -241,17 +244,13 @@ void general_manager_set_fuel(int fuel_x10)
     s_fuel_count++;
 }
 
-/* 保留兼容接口，但内部不再使用（数据改从obd_manager读取） */
 void general_manager_set_obd_data(int rpm, int speed)
 {
-    /* 已废弃: 数据现在直接从 obd_manager_get_data() 读取 */
-    (void)rpm;
-    (void)speed;
+    (void)rpm; (void)speed;
 }
 
 void general_manager_set_oil(int oil_temp)
 {
-    /* 已废弃: 数据现在直接从 obd_manager_get_data() 读取 */
     (void)oil_temp;
 }
 
@@ -280,11 +279,18 @@ void general_manager_enter(void)
     update_avg_labels();
     update_odometer();
 
+    /* ---- 禁用 arc / slider 手动触摸滑动 ---- */
+    if (s_ui->general_arc_rpm)        lv_obj_clear_flag(s_ui->general_arc_rpm,        LV_OBJ_FLAG_CLICKABLE);
+    if (s_ui->general_arc_speed)      lv_obj_clear_flag(s_ui->general_arc_speed,      LV_OBJ_FLAG_CLICKABLE);
+    if (s_ui->general_arc_oil)      lv_obj_clear_flag(s_ui->general_arc_oil,        LV_OBJ_FLAG_CLICKABLE);
+    if (s_ui->general_arc_energy)   lv_obj_clear_flag(s_ui->general_arc_energy,     LV_OBJ_FLAG_CLICKABLE);
+    if (s_ui->general_slider_energy)lv_obj_clear_flag(s_ui->general_slider_energy,  LV_OBJ_FLAG_CLICKABLE);
+
     /* 数字标签移到最上层 */
-    if (s_ui->general_label_rpm_number) lv_obj_move_foreground(s_ui->general_label_rpm_number);
-    if (s_ui->general_label_speed_number) lv_obj_move_foreground(s_ui->general_label_speed_number);
-    if (s_ui->general_label_oil_number) lv_obj_move_foreground(s_ui->general_label_oil_number);
-    if (s_ui->general_label_energy_number) lv_obj_move_foreground(s_ui->general_label_energy_number);
+    if (s_ui->general_label_rpm_number)      lv_obj_move_foreground(s_ui->general_label_rpm_number);
+    if (s_ui->general_label_speed_number)    lv_obj_move_foreground(s_ui->general_label_speed_number);
+    if (s_ui->general_label_oil_number)      lv_obj_move_foreground(s_ui->general_label_oil_number);
+    if (s_ui->general_label_energy_number)   lv_obj_move_foreground(s_ui->general_label_energy_number);
     if (s_ui->general_label_energy_number_2) lv_obj_move_foreground(s_ui->general_label_energy_number_2);
 }
 
@@ -324,8 +330,10 @@ void general_manager_update(uint32_t now_ms)
         update_odometer();
     }
 
+    /* 蓝牙未连接闪烁 */
+    update_slider_blink(now_ms);
+
 #if GENERAL_TEST_MODE
-    /* 测试模式：energy 模拟波动 */
     static int test_energy = 0;
     static int test_energy_dir = 1;
     if ((now_ms / 50) % 2 == 0) {
