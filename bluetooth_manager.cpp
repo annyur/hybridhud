@@ -3,7 +3,7 @@
  * 为 obd_manager 提供原始数据收发接口
  */
 #include "bluetooth_manager.h"
-#include "general_manager.h"
+#include "src/gui_guider.h"
 #include <Arduino.h>
 #include <Preferences.h>
 #include <BLEDevice.h>
