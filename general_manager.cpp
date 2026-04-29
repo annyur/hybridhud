@@ -174,11 +174,16 @@ static void update_temp(void)
 
 /* ================================================================
  *  OBD 数据驱动 Arc / Label（RPM / Speed / Oil）
+ *  30fps，严格变化检测：值没变时不重绘，避免无意义刷新
  * ================================================================ */
+static int s_last_rpm = -1;
+static int s_last_speed = -1;
+static int s_last_oil = -9999;
+
 static void update_obd_display(uint32_t now_ms)
 {
     if (!s_ui) return;
-    if (now_ms - s_last_arc_ms < 100) return;
+    if (now_ms - s_last_arc_ms < 33) return;  /* 30fps */
     s_last_arc_ms = now_ms;
 
     const struct OBDData* d = obd_manager_get_data();
@@ -198,27 +203,44 @@ static void update_obd_display(uint32_t now_ms)
     if (oil < -40) oil = d->coolant;
 #endif
 
-    if (s_ui->general_arc_rpm)     lv_arc_set_value(s_ui->general_arc_rpm, rpm);
-    if (s_ui->general_label_rpm_number) {
-        if (rpm == 0) lv_label_set_text(s_ui->general_label_rpm_number, "");
-        else { char buf[8]; snprintf(buf, sizeof(buf), "%d", rpm); lv_label_set_text(s_ui->general_label_rpm_number, buf); }
+    bool changed = false;
+
+    if (rpm != s_last_rpm) {
+        s_last_rpm = rpm;
+        changed = true;
+        if (s_ui->general_arc_rpm)     lv_arc_set_value(s_ui->general_arc_rpm, rpm);
+        if (s_ui->general_label_rpm_number) {
+            if (rpm == 0) lv_label_set_text(s_ui->general_label_rpm_number, "");
+            else { char buf[8]; snprintf(buf, sizeof(buf), "%d", rpm); lv_label_set_text(s_ui->general_label_rpm_number, buf); }
+        }
     }
 
-    if (s_ui->general_arc_speed)   lv_arc_set_value(s_ui->general_arc_speed, speed);
-    if (s_ui->general_label_speed_number) {
-        char buf[8]; snprintf(buf, sizeof(buf), "%d", speed);
-        lv_label_set_text(s_ui->general_label_speed_number, buf);
+    if (speed != s_last_speed) {
+        s_last_speed = speed;
+        changed = true;
+        if (s_ui->general_arc_speed)   lv_arc_set_value(s_ui->general_arc_speed, speed);
+        if (s_ui->general_label_speed_number) {
+            char buf[8]; snprintf(buf, sizeof(buf), "%d", speed);
+            lv_label_set_text(s_ui->general_label_speed_number, buf);
+        }
     }
 
-    if (s_ui->general_arc_oil)     lv_arc_set_value(s_ui->general_arc_oil, oil);
-    if (s_ui->general_label_oil_number) {
-        char buf[8];
-        if (oil >= -40) snprintf(buf, sizeof(buf), "%d", oil);
-        else snprintf(buf, sizeof(buf), "--");
-        lv_label_set_text(s_ui->general_label_oil_number, buf);
+    if (oil != s_last_oil) {
+        s_last_oil = oil;
+        changed = true;
+        if (s_ui->general_arc_oil)     lv_arc_set_value(s_ui->general_arc_oil, oil);
+        if (s_ui->general_label_oil_number) {
+            char buf[8];
+            if (oil >= -40) snprintf(buf, sizeof(buf), "%d", oil);
+            else snprintf(buf, sizeof(buf), "--");
+            lv_label_set_text(s_ui->general_label_oil_number, buf);
+        }
     }
 
-    lv_obj_invalidate(s_ui->general);
+    /* 只有数据变化时才整屏刷新 — 防止花屏+减少卡顿 */
+    if (changed) {
+        lv_obj_invalidate(s_ui->general);
+    }
 }
 
 /* ================================================================
@@ -260,6 +282,7 @@ void general_manager_set_oil(int oil_temp)
 void general_manager_init(lv_ui *ui)
 {
     s_ui = ui;
+    s_last_rpm = -1; s_last_speed = -1; s_last_oil = -9999;
     if (s_ui->general_slider_energy) {
         lv_slider_set_range(s_ui->general_slider_energy, 0, 100);
     }
@@ -272,6 +295,7 @@ void general_manager_init(lv_ui *ui)
 void general_manager_enter(void)
 {
     s_active = true;
+    s_last_rpm = -1; s_last_speed = -1; s_last_oil = -9999;
     update_time();
     update_temp();
     update_slider_display();
@@ -282,9 +306,9 @@ void general_manager_enter(void)
     /* ---- 禁用 arc / slider 手动触摸滑动 ---- */
     if (s_ui->general_arc_rpm)        lv_obj_clear_flag(s_ui->general_arc_rpm,        LV_OBJ_FLAG_CLICKABLE);
     if (s_ui->general_arc_speed)      lv_obj_clear_flag(s_ui->general_arc_speed,      LV_OBJ_FLAG_CLICKABLE);
-    if (s_ui->general_arc_oil)      lv_obj_clear_flag(s_ui->general_arc_oil,        LV_OBJ_FLAG_CLICKABLE);
-    if (s_ui->general_arc_energy)   lv_obj_clear_flag(s_ui->general_arc_energy,     LV_OBJ_FLAG_CLICKABLE);
-    if (s_ui->general_slider_energy)lv_obj_clear_flag(s_ui->general_slider_energy,  LV_OBJ_FLAG_CLICKABLE);
+    if (s_ui->general_arc_oil)        lv_obj_clear_flag(s_ui->general_arc_oil,        LV_OBJ_FLAG_CLICKABLE);
+    if (s_ui->general_arc_energy)     lv_obj_clear_flag(s_ui->general_arc_energy,     LV_OBJ_FLAG_CLICKABLE);
+    if (s_ui->general_slider_energy)  lv_obj_clear_flag(s_ui->general_slider_energy,  LV_OBJ_FLAG_CLICKABLE);
 
     /* 数字标签移到最上层 */
     if (s_ui->general_label_rpm_number)      lv_obj_move_foreground(s_ui->general_label_rpm_number);
@@ -320,7 +344,7 @@ void general_manager_update(uint32_t now_ms)
         update_temp();
     }
 
-    /* OBD 数据驱动 RPM / Speed / Oil */
+    /* OBD 数据驱动 RPM / Speed / Oil（30fps，变化检测） */
     update_obd_display(now_ms);
 
     /* 平均功率 / 油耗 / 里程: 1秒 */

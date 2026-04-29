@@ -16,6 +16,14 @@
 #define ICAR_READ_CHAR_UUID "00002af0-0000-1000-8000-00805f9b34fb"
 #define ICAR_WRITE_CHAR_UUID "00002af1-0000-1000-8000-00805f9b34fb"
 
+/* app_screen_t 枚举值 */
+#ifndef APP_SCREEN_GENERAL
+#define APP_SCREEN_GENERAL   0
+#define APP_SCREEN_RACE      1
+#define APP_SCREEN_SETTING   2
+#define APP_SCREEN_BLUETOOTH 3
+#endif
+
 typedef struct { char name[BT_NAME_LEN]; char addr[BT_ADDR_LEN]; esp_ble_addr_type_t addr_type; } bt_device_t;
 static bt_device_t s_devices[BT_MAX_DEVICES];
 static int  s_device_count = 0;
@@ -30,8 +38,11 @@ static bool s_is_connected = false, s_ble_enabled = false;
 static char s_conn_addr[BT_ADDR_LEN] = "", s_conn_name[BT_NAME_LEN] = "";
 static int s_connecting_idx = -1, s_target_idx = -1, s_state = 0;
 static BLERemoteCharacteristic *s_write_char = NULL, *s_read_char = NULL;
+static bool s_ble_inited = false;
+static bool s_pending_reconnect = false;   /* true=开机自动回连, false=手动操作 */
+static uint32_t s_reconnect_delay_ms = 0;  /* 开机延迟启动 BLE */
 
-/* ---- 原始数据缓冲 (供 obd_manager 读取) ---- */
+/* ---- 原始数据缓冲 ---- */
 static char s_rx_buf[512] = "";
 static bool s_rx_ready = false;
 
@@ -104,15 +115,17 @@ static void do_connect(void){
 }
 static void do_auto_reconnect(void){
     char a[BT_ADDR_LEN],n[BT_NAME_LEN];uint8_t t=BLE_ADDR_TYPE_PUBLIC;
-    if(!load_last_device(a,n,&t)){s_state=0;return;}   /* 无记录直接结束，不切 scan */
-    do_disconnect(true);delay(100);s_client=BLEDevice::createClient();s_client->setClientCallbacks(new BTClientCB());
+    if(!load_last_device(a,n,&t)){s_state=0;return;}
+    do_disconnect(true);
+    s_client=BLEDevice::createClient();s_client->setClientCallbacks(new BTClientCB());
     if(s_client->connect(BLEAddress(a),(esp_ble_addr_type_t)t)){
         strncpy(s_conn_addr,a,BT_ADDR_LEN-1);s_conn_addr[BT_ADDR_LEN-1]=0;
         strncpy(s_conn_name,n,BT_NAME_LEN-1);s_conn_name[BT_NAME_LEN-1]=0;
         s_is_connected=true;discover_services();s_state=0;
+        Serial.println("[BT] Auto-reconnect OK");
     }else{
         if(s_client){delete s_client;s_client=NULL;}
-        /* 地址直连失败即放弃，不再扫描匹配名称回连 */
+        Serial.println("[BT] Auto-reconnect failed, give up");
         s_state=0;
     }
     refresh_device_list();
@@ -140,6 +153,12 @@ static void start_scan(void){
 static void refresh_device_list(void){
     if(!s_ui||!s_ui->bluetooth_bt_list_devices)return;
     lv_obj_clean(s_ui->bluetooth_bt_list_devices);
+    if(!s_ble_enabled){
+        lv_obj_t*b=lv_list_add_btn(s_ui->bluetooth_bt_list_devices,LV_SYMBOL_BLUETOOTH,"Bluetooth OFF");
+        lv_obj_clear_flag(b,LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_text_color(b,lv_color_hex(0x888888),LV_PART_MAIN);
+        return;
+    }
     if(s_device_count==0){lv_obj_t*b=lv_list_add_btn(s_ui->bluetooth_bt_list_devices,LV_SYMBOL_BLUETOOTH,"No devices");lv_obj_clear_flag(b,LV_OBJ_FLAG_CLICKABLE);return;}
     for(int i=0;i<s_device_count;i++){
         char buf[64];
@@ -159,10 +178,39 @@ static void refresh_device_list(void){
 }
 
 static void on_back(lv_event_t*){
-    if(s_switch_cb) s_switch_cb((app_screen_t)3, false);  /* 3 = setting screen */
+    if(s_switch_cb) s_switch_cb((app_screen_t)APP_SCREEN_SETTING, false);
 }
-static void on_sw(lv_event_t*e){lv_obj_t*sw=lv_event_get_target(e);bool on=lv_obj_has_state(sw,LV_STATE_CHECKED);if(on==s_ble_enabled)return;if(on){s_ble_enabled=true;save_ble_state();s_state=1;}else{if(s_scanning&&pBLEScan){pBLEScan->stop();s_scanning=false;}do_disconnect(true);s_ble_enabled=false;s_state=0;save_ble_state();}}
-static void on_scan_btn(lv_event_t*){if(!s_ble_enabled){s_ble_enabled=true;save_ble_state();s_state=1;return;}s_state=3;}
+static void on_sw(lv_event_t*e){
+    lv_obj_t*sw=lv_event_get_target(e);
+    bool on=lv_obj_has_state(sw,LV_STATE_CHECKED);
+    if(on==s_ble_enabled)return;
+    if(on){
+        /* 手动打开：直接 init + 扫描，不走回连 */
+        if(!s_ble_inited){BLEDevice::init("HybridHUD");s_ble_inited=true;}
+        s_ble_enabled=true;
+        save_ble_state();
+        s_pending_reconnect=false;
+        s_state=3;  /* 直接扫描 */
+    }else{
+        if(s_scanning&&pBLEScan){pBLEScan->stop();s_scanning=false;}
+        do_disconnect(true);
+        s_ble_enabled=false;
+        s_state=0;
+        save_ble_state();
+        refresh_device_list();
+    }
+}
+static void on_scan_btn(lv_event_t*){
+    if(!s_ble_enabled){
+        if(!s_ble_inited){BLEDevice::init("HybridHUD");s_ble_inited=true;}
+        s_ble_enabled=true;
+        save_ble_state();
+        s_pending_reconnect=false;
+        s_state=3;
+        return;
+    }
+    s_state=3;
+}
 
 void bluetooth_manager_init(lv_ui* ui){
     s_ui=(lv_ui*)ui;load_ble_state();
@@ -171,7 +219,8 @@ void bluetooth_manager_init(lv_ui* ui){
         if(s_ble_enabled)lv_obj_add_state(s_ui->bluetooth_bt_sw_enable,LV_STATE_CHECKED);else lv_obj_clear_state(s_ui->bluetooth_bt_sw_enable,LV_STATE_CHECKED);
     }
     if(s_ui->bluetooth_bt_btn_scan)lv_obj_add_event_cb(s_ui->bluetooth_bt_btn_scan,on_scan_btn,LV_EVENT_CLICKED,NULL);
-    if(s_ble_enabled){s_ble_enabled=false;s_state=1;}
+    /* 开机延迟 800ms 再启动 BLE，避免阻塞 UI */
+    if(s_ble_enabled){s_ble_enabled=false;s_pending_reconnect=true;s_reconnect_delay_ms=millis()+800;}
 }
 void bluetooth_manager_set_switch_cb(app_switch_cb_t cb){s_switch_cb=cb;}
 void bluetooth_manager_set_conn_cb(bt_conn_cb_t cb){s_conn_cb=cb;}
@@ -187,15 +236,37 @@ void bluetooth_manager_enter(void){
 }
 void bluetooth_manager_exit(void){if(s_scanning&&pBLEScan){pBLEScan->stop();s_scanning=false;}}
 void bluetooth_manager_update(void){
+    /* 开机延迟回连 */
+    if(s_reconnect_delay_ms>0){
+        if((int)(millis()-s_reconnect_delay_ms)<0)return;
+        s_reconnect_delay_ms=0;
+        s_ble_enabled=true;
+        s_pending_reconnect=true;
+        s_state=1;
+    }
+
     if(s_scan_done){s_scan_done=false;refresh_device_list();}
-    switch(s_state){case 1:BLEDevice::init("HybridHUD");s_ble_enabled=true;s_state=2;break;case 2:do_auto_reconnect();break;case 3:start_scan();break;case 4:do_connect();break;default:break;}
+
+    switch(s_state){
+        case 1:
+            if(!s_ble_inited){BLEDevice::init("HybridHUD");s_ble_inited=true;}
+            s_ble_enabled=true;
+            /* 开机自动回连，手动打开直接扫描 */
+            s_state = s_pending_reconnect ? 2 : 3;
+            s_pending_reconnect = false;
+            break;
+        case 2:do_auto_reconnect();break;
+        case 3:start_scan();break;
+        case 4:do_connect();break;
+        default:break;
+    }
 }
 bool bluetooth_is_connected(void){return s_is_connected;}
 const char* bluetooth_connected_name(void){return s_conn_name[0]?s_conn_name:nullptr;}
 const char* bluetooth_connected_addr(void){return s_conn_addr[0]?s_conn_addr:nullptr;}
 
 /* ================================================================
- *  原始数据接口 (供 obd_manager 调用)
+ *  原始数据接口
  * ================================================================ */
 bool bluetooth_manager_write(const char* data) {
     if (!s_write_char || !s_is_connected) return false;
@@ -203,16 +274,6 @@ bool bluetooth_manager_write(const char* data) {
     s_write_char->writeValue(data);
     return true;
 }
-
-bool bluetooth_manager_rx_ready(void) {
-    return s_rx_ready;
-}
-
-const char* bluetooth_manager_rx_buf(void) {
-    return s_rx_buf;
-}
-
-void bluetooth_manager_rx_clear(void) {
-    s_rx_ready = false;
-    s_rx_buf[0] = 0;
-}
+bool bluetooth_manager_rx_ready(void) { return s_rx_ready; }
+const char* bluetooth_manager_rx_buf(void) { return s_rx_buf; }
+void bluetooth_manager_rx_clear(void) { s_rx_ready = false; s_rx_buf[0] = 0; }
