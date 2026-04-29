@@ -1,6 +1,6 @@
-/*  bluetooth_manager.cpp — 基础版 (移除OBD轮询，保留BLE搜索连接)
- *  保留: BLE设备扫描、连接、断开、UI交互
- *  移除: PID轮询、ECU DID扫描、ELM327初始化、数据解析
+/* bluetooth_manager.cpp — BLE连接管理 (基础版 v2.0)
+ * 职责: 设备扫描、连接、断开、UI交互
+ * 为 obd_manager 提供原始数据收发接口
  */
 #include "bluetooth_manager.h"
 #include "general_manager.h"
@@ -24,6 +24,7 @@ static int  s_device_count = 0;
 static volatile bool s_scan_done = false, s_scanning = false;
 static lv_ui *s_ui = NULL;
 static app_switch_cb_t s_switch_cb = NULL;
+static bt_conn_cb_t s_conn_cb = NULL;
 static BLEScan *pBLEScan = NULL;
 static Preferences bt_prefs;
 static BLEClient *s_client = NULL;
@@ -33,6 +34,10 @@ static int s_connecting_idx = -1, s_target_idx = -1, s_state = 0;
 static bool s_auto_conn_after_scan = false;
 static char s_auto_conn_name[BT_NAME_LEN] = "";
 static BLERemoteCharacteristic *s_write_char = NULL, *s_read_char = NULL;
+
+/* ---- 原始数据缓冲 (供 obd_manager 读取) ---- */
+static char s_rx_buf[512] = "";
+static bool s_rx_ready = false;
 
 /* ================================================================ */
 static void refresh_device_list(void);
@@ -47,9 +52,27 @@ static void save_last_device(const char*a,const char*n,uint8_t t){bt_prefs.begin
 static bool load_last_device(char*a,char*n,uint8_t*t){bt_prefs.begin("bt_prefs",true);String A=bt_prefs.getString("last_addr",""),N=bt_prefs.getString("last_name","");uint8_t T=bt_prefs.getUChar("last_type",BLE_ADDR_TYPE_PUBLIC);bt_prefs.end();if(A.length()==0)return false;strncpy(a,A.c_str(),BT_ADDR_LEN-1);a[BT_ADDR_LEN-1]=0;strncpy(n,N.c_str(),BT_NAME_LEN-1);n[BT_NAME_LEN-1]=0;*t=T;return true;}
 
 class BTClientCB : public BLEClientCallbacks {
-    void onConnect(BLEClient*){s_is_connected=true;s_connecting_idx=-1;Serial.println("[BT] onConnect");}
-    void onDisconnect(BLEClient*){s_is_connected=false;s_conn_addr[0]=0;s_conn_name[0]=0;s_write_char=NULL;s_read_char=NULL;Serial.println("[BT] onDisconnect");}
+    void onConnect(BLEClient*){
+        s_is_connected=true;s_connecting_idx=-1;
+        Serial.println("[BT] onConnect");
+        if(s_conn_cb) s_conn_cb(true);
+    }
+    void onDisconnect(BLEClient*){
+        s_is_connected=false;s_conn_addr[0]=0;s_conn_name[0]=0;
+        s_write_char=NULL;s_read_char=NULL;
+        Serial.println("[BT] onDisconnect");
+        if(s_conn_cb) s_conn_cb(false);
+    }
 };
+
+static void on_notify(BLERemoteCharacteristic*, uint8_t*p, size_t l, bool){
+    if(!l)return;
+    size_t c=strlen(s_rx_buf);
+    size_t a=sizeof(s_rx_buf)-1-c;
+    size_t n=l<a?l:a;
+    if(n){memcpy(s_rx_buf+c,p,n);s_rx_buf[c+n]=0;}
+    s_rx_ready=true;
+}
 
 static bool discover_services(void){
     if(!s_client||!s_client->isConnected())return false;
@@ -58,6 +81,8 @@ static bool discover_services(void){
     s_write_char=svc->getCharacteristic(ICAR_WRITE_CHAR_UUID);
     s_read_char=svc->getCharacteristic(ICAR_READ_CHAR_UUID);
     if(!s_write_char||!s_read_char){Serial.println("[BT-ELM] Char missing");return false;}
+    if(s_read_char->canNotify())s_read_char->registerForNotify(on_notify);
+    s_rx_buf[0]=0;s_rx_ready=false;
     Serial.println("[BT] Services discovered OK");
     return true;
 }
@@ -65,6 +90,7 @@ static bool discover_services(void){
 /* ================================================================ */
 static void do_disconnect(bool full){
     s_write_char=NULL;s_read_char=NULL;
+    s_rx_buf[0]=0;s_rx_ready=false;
     if(s_client){if(s_client->isConnected())s_client->disconnect();if(full){delete s_client;s_client=NULL;}}
     s_is_connected=false;s_conn_addr[0]=0;s_conn_name[0]=0;s_connecting_idx=-1;
 }
@@ -146,6 +172,7 @@ void bluetooth_manager_init(lv_ui*ui){
     if(s_ble_enabled){s_ble_enabled=false;s_state=1;}
 }
 void bluetooth_manager_set_switch_cb(app_switch_cb_t cb){s_switch_cb=cb;}
+void bluetooth_manager_set_conn_cb(bt_conn_cb_t cb){s_conn_cb=cb;}
 void bluetooth_manager_enter(void){
     if(!s_ui||!s_ui->bluetooth_bt_list_devices)return;lv_obj_clean(s_ui->bluetooth_bt_list_devices);
     if(s_ui->bluetooth_bt_sw_enable){if(s_ble_enabled)lv_obj_add_state(s_ui->bluetooth_bt_sw_enable,LV_STATE_CHECKED);else lv_obj_clear_state(s_ui->bluetooth_bt_sw_enable,LV_STATE_CHECKED);}
@@ -160,8 +187,29 @@ void bluetooth_manager_exit(void){if(s_scanning&&pBLEScan){pBLEScan->stop();s_sc
 void bluetooth_manager_update(void){
     if(s_scan_done){s_scan_done=false;refresh_device_list();if(s_auto_conn_after_scan){s_auto_conn_after_scan=false;for(int i=0;i<s_device_count;i++){if(strcmp(s_devices[i].name,s_auto_conn_name)==0){s_connecting_idx=i;s_target_idx=i;s_state=4;refresh_device_list();break;}}s_auto_conn_name[0]=0;}}
     switch(s_state){case 1:BLEDevice::init("HybridHUD");s_ble_enabled=true;s_state=2;break;case 2:do_auto_reconnect();break;case 3:start_scan();break;case 4:do_connect();break;default:break;}
-    // 轮询功能已移除 - 仅保留BLE连接状态维护
 }
 bool bluetooth_is_connected(void){return s_is_connected;}
 const char* bluetooth_connected_name(void){return s_conn_name[0]?s_conn_name:nullptr;}
 const char* bluetooth_connected_addr(void){return s_conn_addr[0]?s_conn_addr:nullptr;}
+
+/* ================================================================
+ *  原始数据接口 (供 obd_manager 调用)
+ * ================================================================ */
+bool bluetooth_manager_write(const char* data) {
+    if (!s_write_char || !s_is_connected) return false;
+    s_rx_buf[0] = 0; s_rx_ready = false;
+    return s_write_char->writeValue(data);
+}
+
+bool bluetooth_manager_rx_ready(void) {
+    return s_rx_ready;
+}
+
+const char* bluetooth_manager_rx_buf(void) {
+    return s_rx_buf;
+}
+
+void bluetooth_manager_rx_clear(void) {
+    s_rx_ready = false;
+    s_rx_buf[0] = 0;
+}
