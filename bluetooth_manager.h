@@ -3,14 +3,12 @@
 #define BLUETOOTH_MANAGER_H
 
 #include <Arduino.h>
+#include "src/gui_guider.h"
+#include "setting_manager.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/* 注意: lv_ui 和 app_switch_cb_t 类型在 hybridhud.ino 中通过
- * #include "src/gui_guider.h" 和 #include "setting_manager.h" 定义
- * 本头文件不重新定义这些类型 */
 
 typedef void (*bt_conn_cb_t)(bool connected);
 

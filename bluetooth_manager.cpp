@@ -1,5 +1,6 @@
 /* bluetooth_manager.cpp — BLE连接管理 */
 #include "bluetooth_manager.h"
+#include "setting_manager.h"
 #include "src/gui_guider.h"
 #include <Arduino.h>
 #include <Preferences.h>
@@ -156,7 +157,7 @@ static void refresh_device_list(void){
 }
 
 static void on_back(lv_event_t*){
-    if(s_switch_cb) s_switch_cb(APP_SCREEN_SETTING, false);
+    if(s_switch_cb) s_switch_cb((app_screen_t)3, false);  /* 3 = setting screen */
 }
 static void on_sw(lv_event_t*e){lv_obj_t*sw=lv_event_get_target(e);bool on=lv_obj_has_state(sw,LV_STATE_CHECKED);if(on==s_ble_enabled)return;if(on){s_ble_enabled=true;save_ble_state();s_state=1;}else{if(s_scanning&&pBLEScan){pBLEScan->stop();s_scanning=false;}do_disconnect(true);s_ble_enabled=false;s_state=0;save_ble_state();}}
 static void on_scan_btn(lv_event_t*){if(!s_ble_enabled){s_ble_enabled=true;save_ble_state();s_state=1;return;}s_state=3;}

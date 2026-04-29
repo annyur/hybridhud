@@ -110,10 +110,10 @@ static void update_odometer(void)
 {
     if (!s_ui) return;
     uint32_t now_ms = millis();
-    const OBDData& d = obd_manager_get_data();
-    if (s_last_odometer_ms > 0 && d.speed > 0) {
+    const struct OBDData* d = obd_manager_get_data();
+    if (s_last_odometer_ms > 0 && d->speed > 0) {
         float dt = (now_ms - s_last_odometer_ms) / 1000.0f / 3600.0f;
-        if (dt > 0.0f && dt < 1.0f) s_trip_distance += d.speed * dt;
+        if (dt > 0.0f && dt < 1.0f) s_trip_distance += d->speed * dt;
     }
     s_last_odometer_ms = now_ms;
 
@@ -132,7 +132,7 @@ static void update_time(void)
 {
     if (!s_ui || !s_ui->general_label_time) return;
     struct tm timeinfo;
-    rtc_getDateTime(&timeinfo);
+    rtc.getDateTime(&timeinfo);
     char buf[6];
     snprintf(buf, sizeof(buf), "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
     lv_label_set_text(s_ui->general_label_time, buf);
@@ -142,7 +142,7 @@ static void update_temp(void)
 {
     if (!s_ui || !s_ui->general_label_temp) return;
     float temp = 0.0f;
-    bool ok = true; temp = qmi_getTemperature();
+    bool ok = qmi.getDataReady() && (temp = qmi.getTemperature_C(), true);
     char buf[8];
     snprintf(buf, sizeof(buf), ok ? "%.1f" : "--.-", temp);
     lv_label_set_text(s_ui->general_label_temp, buf);
@@ -157,7 +157,7 @@ static void update_obd_display(uint32_t now_ms)
     if (now_ms - s_last_arc_ms < 100) return;
     s_last_arc_ms = now_ms;
 
-    const OBDData& d = obd_manager_get_data();
+    const struct OBDData* d = obd_manager_get_data();
 
 #if GENERAL_TEST_MODE
     /* 测试模式：模拟数据 */
@@ -170,10 +170,10 @@ static void update_obd_display(uint32_t now_ms)
     int oil = 75 + (int)(15.0f * sinf((float)now_ms / 2000.0f));
 #else
     /* 真实OBD数据 */
-    int rpm = d.rpm;
-    int speed = d.speed;      /* ABS原始车速，不加补偿 */
-    int oil = d.oil;          /* 机油温度，优先013C，无效时用coolant */
-    if (oil < -40) oil = d.coolant;  /* 机油温度无效时退而求其次 */
+    int rpm = d->rpm;
+    int speed = d->speed;      /* ABS原始车速，不加补偿 */
+    int oil = d->oil;          /* 机油温度，优先013C，无效时用coolant */
+    if (oil < -40) oil = d->coolant;  /* 机油温度无效时退而求其次 */
 #endif
 
     /* ---- RPM: label_rpm_number + arc_rpm ---- */

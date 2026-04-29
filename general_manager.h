@@ -3,12 +3,11 @@
 #define GENERAL_MANAGER_H
 
 #include <Arduino.h>
+#include "src/gui_guider.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/* lv_ui 类型在 hybridhud.ino 中通过 gui_guider.h 定义 */
 
 void general_manager_init(lv_ui *ui);
 void general_manager_enter(void);
