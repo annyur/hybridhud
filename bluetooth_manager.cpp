@@ -1,7 +1,10 @@
-/*  bluetooth_manager.cpp — v3.0 多ECU帧解析修复版
- *  修复: strtoul跨帧吞数据导致RPM/Speed横跳
- *  新增: 013C机油温度, 0101 MIL, 0142电瓶电压, 0131小计里程
- *  移除: 015C Runtime(NO DATA), 015D FuelLevel(NO DATA), 010F IAT
+/*  bluetooth_manager.cpp — v3.2 里程+扩展扫描版
+ *  修复: mode_pid构造错误导致所有标准PID unhandled
+ *  新增: 010B MAP, 010F IAT, 0111 Throttle, 0143 AbsLoad, 0162/0163 Torque
+ *  新增: 01A6 Odometer 总里程 (4字节, 替代0167——0167返回值与实际里程不符)
+ *  新增: SGCM(7E7) DID扫描 — 0808转速/0809相电流A/0812额定功率/080A相电流B
+ *  实验: HPCM(7E0) IGBT温度 + BECM(7E4) 电池电流 + BMS(F210-F217)
+ *  移除: 0110 MAF(NO DATA), HYB(7B1无效), 015C/015D(NO DATA)
  */
 #include "bluetooth_manager.h"
 #include "general_manager.h"
@@ -41,19 +44,27 @@ static bool s_init_done = false;
 static uint32_t s_init_last_ms = 0;
 
 /* ---- PID轮询状态 ---- */
-#define PID_COUNT 8
+#define PID_COUNT 15
 static const char* s_pid_cmds[PID_COUNT] = {
     "010C",     // 0: RPM
     "010D",     // 1: Speed
     "0105",     // 2: Coolant Temp
-    "013C",     // 3: Oil Temp (真实机油温度)
+    "013C",     // 3: Oil Temp
     "015B",     // 4: EPA Hybrid Battery SOC
-    "0101",     // 5: MIL Status / DTC count
+    "0101",     // 5: MIL / DTC count
     "0142",     // 6: Battery Voltage
-    "0131",     // 7: Distance since codes cleared
+    "0131",     // 7: Distance (since codes cleared)
+    "010B",     // 8: MAP 进气歧管压力
+    "010F",     // 9: IAT 进气温度
+    "0111",     // 10: Throttle 节气门位置
+    "0143",     // 11: Absolute Load
+    "0162",     // 12: Actual Engine Torque %
+    "0163",     // 13: Engine Reference Torque
+    "01A6",     // 14: Odometer 总里程 (4字节: (A×2^24+B×2^16+C×2^8+D)/10 km)
 };
 static const char* s_pid_names[PID_COUNT] = {
-    "RPM", "Speed", "Coolant", "OilTemp", "EPA_SOC", "MIL", "BattV", "Dist"
+    "RPM", "Speed", "Coolant", "OilTemp", "EPA_SOC", "MIL", "BattV", "Dist",
+    "MAP", "IAT", "Throttle", "AbsLoad", "Torque%", "RefTorque", "Odometer"
 };
 static uint32_t s_last_pid_ms = 0;
 static int s_pid_idx = 0;
@@ -66,24 +77,64 @@ static float s_cached_epa_soc = 0;
 static int  s_cached_mil_on = 0, s_cached_dtc_count = 0;
 static float s_cached_batt_v = 0;
 static int  s_cached_dist = 0;       // km
+static int  s_cached_map = 0;        // kPa
+static int  s_cached_iat = -40;      // °C
+// static float s_cached_maf = 0;    // MAF 0110 返回 NO DATA, 已移除
+static int  s_cached_throttle = 0;   // %
+static float s_cached_abs_load = 0;  // %
+static int  s_cached_torque_pct = 0; // % (实际扭矩百分比, 原始值A-125)
+static int  s_cached_torque_ref = 0; // Nm
+static float s_cached_odometer = 0;  // km (0167 总里程, 3字节公式)
 
-/* ---- 电源/能耗数据 (通过burst或标准PID计算) ---- */
+/* ---- SGCM 数据 (7E7 启动/发电控制模块) ---- */
+static int  s_cached_sgcm_rpm = 0;      // DID 0808
+static float s_cached_sgcm_current = 0; // DID 0809 (A, 待标定)
+static int  s_cached_sgcm_rated = 0;    // DID 0812
+static float s_cached_sgcm_volt = 0;    // DID 080A 相电流B (复用变量名, 0.01A/bit)
+
+/* ---- 电源/能耗数据 ---- */
 static float s_cached_power_kw = 0;   // 电机功率估算
 
 /* ================================================================
- *  BMS DID 扫描配置（保留）
+ *  ECU DID 扫描配置
  * ================================================================ */
+typedef void (*did_parser_t)(uint16_t did, const uint8_t* d, int len);
 struct EcuConfig {
     const char* label;
     uint16_t    tx_addr, rx_addr;
     const uint16_t* dids;
     int did_count;
+    did_parser_t parser;
+    bool needs_session;  // true = 需要先发送10 03进入扩展诊断会话
 };
+/* ---- 生产用 DID 列表 ---- */
 static const uint16_t s_bms_dids[] = {0xF250,0xF251,0xF252,0xF253,0xF254,0xF255,0xF229,0xF228};
-static const uint16_t s_hyb_dids[] = {0xF250,0xF251,0xF252,0xF253};
+static const uint16_t s_sgcm_dids[] = {0x0808,0x0809,0x0812,0x080A};
+
+/* ---- 实验扫描 DID 列表 (需要车上验证) ---- */
+/* HPCM(混动动力总成): 7E0→7E8, 扫描F100-F103找IGBT/电机温度 */
+static const uint16_t s_hpcm_scan_dids[] = {0xF100,0xF101,0xF102,0xF103};
+/* BECM(电池能量控制): 7E4→7EC, 扫描F220-F223找电池电流 */
+static const uint16_t s_becm_scan_dids[] = {0xF220,0xF221,0xF222,0xF223};
+/* 最终扫描: BMS F210-F217 (最后可能包含电流的区间) */
+static const uint16_t s_bms_scan_dids[] = {0xF210,0xF211,0xF212,0xF213,0xF214,0xF215,0xF216,0xF217};
+
+static void parse_bms_did(uint16_t did,const uint8_t*d,int len);
+static void parse_sgcm_did(uint16_t did,const uint8_t*d,int len);
+static void parse_hpcm_scan_did(uint16_t did,const uint8_t*d,int len);  // 实验: HPCM IGBT温度
+static void parse_becm_scan_did(uint16_t did,const uint8_t*d,int len);  // 实验: BECM电池电流
+static void parse_bms_scan_did(uint16_t did,const uint8_t*d,int len);   // 实验: BMS F210-F217
+
+/* 
+ * ECU扫描列表 —— 【全开扫描模式】
+ * 生产使用时只保留前2个(BMS+SGCM)，注释掉后面的扫描项
+ */
 static const EcuConfig s_ecu_list[] = {
-    {"BMS",    0x7A1, 0x7A9, s_bms_dids, 8},
-    {"HYB",    0x7B1, 0x7B9, s_hyb_dids, 4},
+    {"BMS",      0x7A1, 0x7A9, s_bms_dids, 8, parse_bms_did, false},
+    {"SGCM",     0x7E7, 0x7EF, s_sgcm_dids, 4, parse_sgcm_did, false},
+    {"HPCM",     0x7E0, 0x7E8, s_hpcm_scan_dids, 4, parse_hpcm_scan_did, false},   // 扫描: IGBT温度
+    {"BECM",     0x7E4, 0x7EC, s_becm_scan_dids, 4, parse_becm_scan_did, false},   // 扫描: 电池电流
+    {"BMS_SCAN", 0x7A1, 0x7A9, s_bms_scan_dids, 8, parse_bms_scan_did, false},      // 扫描: F210-F217
 };
 #define ECU_COUNT (sizeof(s_ecu_list)/sizeof(s_ecu_list[0]))
 
@@ -195,9 +246,7 @@ static bool parse_pid_response(const char* rx, int pid_idx)
     
     // 构建要搜索的模式+PID字符串 (如 "410C")
     char mode_pid[8];
-    snprintf(mode_pid, sizeof(mode_pid), "%02X%02X%02X", mode, 
-             (uint8_t)(strtol(pid_str, NULL, 16) >> 8),
-             (uint8_t)strtol(pid_str, NULL, 16));
+    snprintf(mode_pid, sizeof(mode_pid), "%02X%c%c", mode, pid_str[2], pid_str[3]);
     
     // 按空格分割多ECU响应
     char buf[512];
@@ -226,18 +275,21 @@ static bool parse_pid_response(const char* rx, int pid_idx)
                 if (bc >= 2) {
                     s_cached_rpm = (((uint16_t)bytes[0] << 8) | bytes[1]) / 4;
                     found = true;
+                    Serial.printf("[OBD] 010C RPM=%d\n", s_cached_rpm);
                 }
                 break;
             case 1: // 010D Speed: A km/h
                 if (bc >= 1) {
                     s_cached_speed = bytes[0];
                     found = true;
+                    Serial.printf("[OBD] 010D Speed=%dkm/h\n", s_cached_speed);
                 }
                 break;
             case 2: // 0105 Coolant: A-40
                 if (bc >= 1) {
                     s_cached_coolant = (int)bytes[0] - 40;
                     found = true;
+                    Serial.printf("[OBD] 0105 Coolant=%dC\n", s_cached_coolant);
                 }
                 break;
             case 3: // 013C Oil Temp: A-40
@@ -280,6 +332,63 @@ static bool parse_pid_response(const char* rx, int pid_idx)
                 }
                 break;
             }
+            case 8: { // 010B MAP: A kPa
+                if (bc >= 1) {
+                    s_cached_map = bytes[0];
+                    found = true;
+                    Serial.printf("[OBD] 010B MAP=%dkPa\n", s_cached_map);
+                }
+                break;
+            }
+            case 9: { // 010F IAT: A-40
+                if (bc >= 1) {
+                    s_cached_iat = (int)bytes[0] - 40;
+                    found = true;
+                    Serial.printf("[OBD] 010F IAT=%dC\n", s_cached_iat);
+                }
+                break;
+            }
+            case 10: { // 0111 Throttle: A*100/255 %
+                if (bc >= 1) {
+                    s_cached_throttle = (int)(bytes[0] * 100.0f / 255.0f);
+                    found = true;
+                    Serial.printf("[OBD] 0111 Throttle=%d%%\n", s_cached_throttle);
+                }
+                break;
+            }
+            case 11: { // 0143 Absolute Load: (A*256+B)*100/255 %
+                if (bc >= 2) {
+                    s_cached_abs_load = (((uint16_t)bytes[0] << 8) | bytes[1]) * 100.0f / 255.0f;
+                    found = true;
+                    Serial.printf("[OBD] 0143 AbsLoad=%.1f%%\n", s_cached_abs_load);
+                }
+                break;
+            }
+            case 12: { // 0162 Actual Torque: A-125 %
+                if (bc >= 1) {
+                    s_cached_torque_pct = (int)bytes[0] - 125;
+                    found = true;
+                    Serial.printf("[OBD] 0162 TorquePct=%d%%\n", s_cached_torque_pct);
+                }
+                break;
+            }
+            case 13: { // 0163 Reference Torque: (A*256+B) Nm
+                if (bc >= 2) {
+                    s_cached_torque_ref = ((uint16_t)bytes[0] << 8) | bytes[1];
+                    found = true;
+                    Serial.printf("[OBD] 0163 RefTorque=%dNm\n", s_cached_torque_ref);
+                }
+                break;
+            }
+            case 14: { // 01A6 Odometer: (A×2^24+B×2^16+C×2^8+D)/10 km (4字节)
+                if (bc >= 4) {
+                    uint32_t raw = ((uint32_t)bytes[0] << 24) | ((uint32_t)bytes[1] << 16) | ((uint32_t)bytes[2] << 8) | bytes[3];
+                    s_cached_odometer = raw / 10.0f;
+                    found = true;
+                    Serial.printf("[OBD] 01A6 Odometer=%.1fkm\n", s_cached_odometer);
+                }
+                break;
+            }
         }
         
         if (found) return true;
@@ -287,6 +396,104 @@ static bool parse_pid_response(const char* rx, int pid_idx)
         tok = strtok(NULL, " \r\n>");
     }
     return false;
+}
+
+/* ================================================================
+ *  SGCM DID 解析（7E7 启动/发电控制模块）
+ * ================================================================ */
+static void parse_sgcm_did(uint16_t did, const uint8_t* d, int len){
+    switch(did){
+        case 0x0808: // 推断: 发电机/启电机转速
+            if(len>=2){
+                s_cached_sgcm_rpm = ((uint16_t)d[0]<<8)|d[1];
+                Serial.printf("[SGCM] 0808 转速=%d RPM\n", s_cached_sgcm_rpm);
+            }
+            break;
+        case 0x0809: // 推断: 相电流 (量纲待验证)
+            if(len>=2){
+                uint16_t raw = ((uint16_t)d[0]<<8)|d[1];
+                s_cached_sgcm_current = raw * 0.01f;
+                Serial.printf("[SGCM] 0809 电流=%.2f A (raw=0x%04X)\n", s_cached_sgcm_current, raw);
+            }
+            break;
+        case 0x0812: // 推断: 额定/最大转速上限 (固定值10000)
+            if(len>=2){
+                s_cached_sgcm_rated = ((uint16_t)d[0]<<8)|d[1];
+                Serial.printf("[SGCM] 0812 额定值=%d\n", s_cached_sgcm_rated);
+            }
+            break;
+        case 0x080A: // 推断: 另一路相电流 (与0809构成三相电流中的两路)
+            if(len>=2){
+                uint16_t raw = ((uint16_t)d[0]<<8)|d[1];
+                s_cached_sgcm_volt = raw * 0.01f;  // 复用缓存变量名, 实际含义是电流B
+                Serial.printf("[SGCM] 080A 电流B=%.2f A (raw=0x%04X)\n", s_cached_sgcm_volt, raw);
+            }
+            break;
+        default:{
+            Serial.printf("[SGCM] 0x%04X raw=0x",did);
+            for(int i=0;i<len;i++)Serial.printf("%02X",d[i]);
+            Serial.println();
+        }
+    }
+}
+
+/* ================================================================
+ *  实验扫描 DID 解析器 —— 只打印原始值, 等人工标定含义
+ * ================================================================ */
+/* ---- HPCM扫描: 找IGBT/电机温度 ----
+ * GPEU在7E6上失败, IGBT温度可能集成在HPCM(7E8)中
+ * 正常IGBT温度: 冷车≈环境温度, 行驶50-80C, 高负荷90-110C
+ */
+static void parse_hpcm_scan_did(uint16_t did, const uint8_t* d, int len){
+    Serial.printf("[HPCM-SCAN] DID=0x%04X len=%d raw=0x", did, len);
+    for(int i=0;i<len;i++) Serial.printf("%02X",d[i]);
+    Serial.println();
+    if(len==1){
+        int t_raw=(int)d[0];
+        Serial.printf("  -> [1字节] 原始=%d  温度(-40)=%dC  温度(-273)=%dC\n",
+                       t_raw, t_raw-40, t_raw-273);
+    }else if(len==2){
+        uint16_t u=((uint16_t)d[0]<<8)|d[1];
+        int16_t s=(int16_t)u;
+        Serial.printf("  -> [2字节] 无符号=%u  有符号=%d  温度(-40)=%dC\n", u, s, s-40);
+    }
+}
+
+/* ---- BECM扫描: 找Battery Total Current ----
+ * BECM=电池能量控制模块, 7E4→7EC
+ * 可能包含直接的电池直流电流数据
+ */
+static void parse_becm_scan_did(uint16_t did, const uint8_t* d, int len){
+    Serial.printf("[BECM-SCAN] DID=0x%04X len=%d raw=0x", did, len);
+    for(int i=0;i<len;i++) Serial.printf("%02X",d[i]);
+    Serial.println();
+    if(len==2){
+        uint16_t u=((uint16_t)d[0]<<8)|d[1];
+        int16_t s=(int16_t)u;
+        Serial.printf("  -> [2字节] 有符号=%d  电流(1A)=%dA  电流(0.1A)=%.1fA  电流(0.01A)=%.2fA  温度(-40)=%dC\n",
+                       s, s, s*0.1f, s*0.01f, s-40);
+    }else if(len==1){
+        int8_t sb=(int8_t)d[0];
+        Serial.printf("  -> [1字节] 有符号=%d  电流(1A)=%dA\n", sb, sb);
+    }
+}
+/* ---- BMS扫描: 找Battery Total Current ----
+ * CarScanner显示待机电流约1A, 对应功耗0.3kW (373V×1A≈373W)
+ * 可能量纲: 有符号16bit × 0.01A 或 × 0.1A 或 × 1A
+ */
+static void parse_bms_scan_did(uint16_t did, const uint8_t* d, int len){
+    Serial.printf("[BMS-SCAN] DID=0x%04X len=%d raw=0x", did, len);
+    for(int i=0;i<len;i++) Serial.printf("%02X",d[i]);
+    Serial.println();
+    if(len==2){
+        uint16_t u=((uint16_t)d[0]<<8)|d[1];
+        int16_t s=(int16_t)u;
+        Serial.printf("  -> [2字节] 有符号=%d  电流(1A)=%dA  电流(0.1A)=%.1fA  电流(0.01A)=%.2fA\n",
+                       s, s, s*0.1f, s*0.01f);
+    }else if(len==1){
+        int8_t sb=(int8_t)d[0];
+        Serial.printf("  -> [1字节] 无符号=%d  有符号=%d  电流(1A)=%dA\n", d[0], sb, sb);
+    }
 }
 
 /* ================================================================
@@ -310,7 +517,7 @@ static void parse_bms_did(uint16_t did,const uint8_t*d,int len){
     }
 }
 
-static void parse_did_frames(const char* rx, uint16_t expect_did, uint16_t expect_rx)
+static void parse_did_frames(const char* rx, uint16_t expect_did, uint16_t expect_rx, did_parser_t parser)
 {
     char buf[512]; strncpy(buf, rx, sizeof(buf)-1); buf[sizeof(buf)-1] = '\0';
     char* tok = strtok(buf, " \r\n>");
@@ -331,7 +538,7 @@ static void parse_did_frames(const char* rx, uint16_t expect_did, uint16_t expec
         if (data_len <= 0) { tok = strtok(NULL, " \r\n>"); continue; }
         if (bytes[1] == 0x62) {
             uint16_t rdid = ((uint16_t)bytes[2] << 8) | bytes[3];
-            if (rdid == expect_did) { parse_bms_did(rdid, &bytes[4], data_len); return; }
+            if (rdid == expect_did) { parser(rdid, &bytes[4], data_len); return; }
         }
         tok = strtok(NULL, " \r\n>");
     }
@@ -381,16 +588,44 @@ static void did_burst_poll(uint32_t now){
     if(!s_in_burst||!s_write_char)return;
     const EcuConfig*ecu=&s_ecu_list[s_burst_ecu];
     switch(s_burst_phase){
-        case 0:{
+        case 0:{ // ATSH 设置目标地址
             if(!s_pid_sent){s_obd_rx_buf[0]=0;s_obd_rx_ready=false;
                 char c[16];snprintf(c,sizeof(c),"ATSH%03X\r",ecu->tx_addr);
                 s_write_char->writeValue(c);s_pid_sent=true;s_burst_cmd_ms=now;
                 Serial.printf("[BURST] === %s ATSH%03X ===\n",ecu->label,ecu->tx_addr);
             }
-            if(s_obd_rx_ready||(int)(now-s_burst_cmd_ms)>800){lrx("[ECU]",s_burst_ecu);s_burst_phase=1;s_burst_did=0;s_pid_sent=false;}
+            if(s_obd_rx_ready||(int)(now-s_burst_cmd_ms)>800){
+                lrx("[ECU]",s_burst_ecu);
+                // 如果需要会话模式，先发送10 03
+                if(ecu->needs_session){
+                    s_burst_phase=10;  // 跳到会话初始化阶段
+                }else{
+                    s_burst_phase=1;s_burst_did=0;
+                }
+                s_pid_sent=false;
+            }
             break;
         }
-        case 1:{
+        case 10:{ // 扩展诊断会话初始化 (10 03)
+            if(!s_pid_sent){s_obd_rx_buf[0]=0;s_obd_rx_ready=false;
+                s_write_char->writeValue("1003\r");
+                s_pid_sent=true;s_burst_cmd_ms=now;
+                Serial.printf("[BURST] %s 10 03 (扩展会话)\n",ecu->label);
+            }
+            if(s_obd_rx_ready||(int)(now-s_burst_cmd_ms)>1200){
+                lrx("[ECU]",s_burst_ecu);
+                if(s_obd_rx_ready){
+                    if(strstr(s_obd_rx_buf,"50")){
+                        Serial.printf("[BURST] %s 会话建立成功\n",ecu->label);
+                    }else{
+                        Serial.printf("[BURST] %s 会话建立失败(继续尝试)\n",ecu->label);
+                    }
+                }
+                s_burst_phase=1;s_burst_did=0;s_pid_sent=false;
+            }
+            break;
+        }
+        case 1:{ // 读DID
             if(s_burst_did<ecu->did_count){
                 if(!s_pid_sent){s_obd_rx_buf[0]=0;s_obd_rx_ready=false;
                     char c[16];snprintf(c,sizeof(c),"22%04X\r",ecu->dids[s_burst_did]);
@@ -399,13 +634,13 @@ static void did_burst_poll(uint32_t now){
                 }
                 if(s_obd_rx_ready||(int)(now-s_burst_cmd_ms)>1200){
                     lrx("[ECU]",s_burst_did);
-                    if(s_obd_rx_ready)parse_did_frames(s_obd_rx_buf,ecu->dids[s_burst_did],ecu->rx_addr);
+                    if(s_obd_rx_ready)parse_did_frames(s_obd_rx_buf,ecu->dids[s_burst_did],ecu->rx_addr,ecu->parser);
                     s_burst_did++;s_pid_sent=false;
                 }
             }else{s_burst_ecu++;s_pid_sent=false;if(s_burst_ecu<(int)ECU_COUNT)s_burst_phase=0;else s_burst_phase=2;}
             break;
         }
-        case 2:{
+        case 2:{ // ATSH7DF 恢复
             if(!s_pid_sent){s_obd_rx_buf[0]=0;s_obd_rx_ready=false;s_write_char->writeValue("ATSH7DF\r");s_pid_sent=true;s_burst_cmd_ms=now;}
             if(s_obd_rx_ready||(int)(now-s_burst_cmd_ms)>800){lrx("[OBD]",99);s_in_burst=false;s_burst_last_ms=now;s_pid_sent=false;s_burst_ecu=0;Serial.println("[BURST] === end ===");}
             break;
