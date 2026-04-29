@@ -444,8 +444,8 @@ void obd_manager_update(void) {
     pid_poll(now);
 }
 
-const OBDData& obd_manager_get_data(void) {
-    return s_data;
+const struct OBDData* obd_manager_get_data(void) {
+    return &s_data;
 }
 
 /* 调试接口: 发送原始命令并等待响应 */

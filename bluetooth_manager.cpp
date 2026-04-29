@@ -1,7 +1,4 @@
-/* bluetooth_manager.cpp — BLE连接管理 (基础版 v2.0)
- * 职责: 设备扫描、连接、断开、UI交互
- * 为 obd_manager 提供原始数据收发接口
- */
+/* bluetooth_manager.cpp — BLE连接管理 */
 #include "bluetooth_manager.h"
 #include "src/gui_guider.h"
 #include <Arduino.h>
@@ -144,7 +141,7 @@ static void refresh_device_list(void){
     for(int i=0;i<s_device_count;i++){
         char buf[64];
         if(s_connecting_idx==i)snprintf(buf,sizeof(buf),"... %s",s_devices[i].name);
-        else if(s_is_connected&&strcmp(s_conn_addr,s_devices[i].addr)==0)snprintf(buf,sizeof(buf),"â %s",s_devices[i].name);
+        else if(s_is_connected&&strcmp(s_conn_addr,s_devices[i].addr)==0)snprintf(buf,sizeof(buf),"\xE2\x97\x8F %s",s_devices[i].name);
         else snprintf(buf,sizeof(buf),"  %s",s_devices[i].name);
         lv_obj_t*b=lv_list_add_btn(s_ui->bluetooth_bt_list_devices,LV_SYMBOL_BLUETOOTH,buf);
         lv_obj_add_event_cb(b,[](lv_event_t*e){
@@ -158,17 +155,19 @@ static void refresh_device_list(void){
     }
 }
 
-static void on_back(lv_event_t*){if(s_switch_cb)s_switch_cb(APP_SCREEN_SETTING,false);}
+static void on_back(lv_event_t*){
+    if(s_switch_cb) s_switch_cb(APP_SCREEN_SETTING, false);
+}
 static void on_sw(lv_event_t*e){lv_obj_t*sw=lv_event_get_target(e);bool on=lv_obj_has_state(sw,LV_STATE_CHECKED);if(on==s_ble_enabled)return;if(on){s_ble_enabled=true;save_ble_state();s_state=1;}else{if(s_scanning&&pBLEScan){pBLEScan->stop();s_scanning=false;}do_disconnect(true);s_ble_enabled=false;s_state=0;save_ble_state();}}
 static void on_scan_btn(lv_event_t*){if(!s_ble_enabled){s_ble_enabled=true;save_ble_state();s_state=1;return;}s_state=3;}
 
-void bluetooth_manager_init(lv_ui*ui){
-    s_ui=ui;load_ble_state();
-    if(ui->bluetooth_btn_back)lv_obj_add_event_cb(ui->bluetooth_btn_back,on_back,LV_EVENT_CLICKED,NULL);
-    if(ui->bluetooth_bt_sw_enable){lv_obj_add_event_cb(ui->bluetooth_bt_sw_enable,on_sw,LV_EVENT_VALUE_CHANGED,NULL);
-        if(s_ble_enabled)lv_obj_add_state(ui->bluetooth_bt_sw_enable,LV_STATE_CHECKED);else lv_obj_clear_state(ui->bluetooth_bt_sw_enable,LV_STATE_CHECKED);
+void bluetooth_manager_init(lv_ui* ui){
+    s_ui=(lv_ui*)ui;load_ble_state();
+    if(s_ui->bluetooth_btn_back)lv_obj_add_event_cb(s_ui->bluetooth_btn_back,on_back,LV_EVENT_CLICKED,NULL);
+    if(s_ui->bluetooth_bt_sw_enable){lv_obj_add_event_cb(s_ui->bluetooth_bt_sw_enable,on_sw,LV_EVENT_VALUE_CHANGED,NULL);
+        if(s_ble_enabled)lv_obj_add_state(s_ui->bluetooth_bt_sw_enable,LV_STATE_CHECKED);else lv_obj_clear_state(s_ui->bluetooth_bt_sw_enable,LV_STATE_CHECKED);
     }
-    if(ui->bluetooth_bt_btn_scan)lv_obj_add_event_cb(ui->bluetooth_bt_btn_scan,on_scan_btn,LV_EVENT_CLICKED,NULL);
+    if(s_ui->bluetooth_bt_btn_scan)lv_obj_add_event_cb(s_ui->bluetooth_bt_btn_scan,on_scan_btn,LV_EVENT_CLICKED,NULL);
     if(s_ble_enabled){s_ble_enabled=false;s_state=1;}
 }
 void bluetooth_manager_set_switch_cb(app_switch_cb_t cb){s_switch_cb=cb;}
@@ -178,7 +177,7 @@ void bluetooth_manager_enter(void){
     if(s_ui->bluetooth_bt_sw_enable){if(s_ble_enabled)lv_obj_add_state(s_ui->bluetooth_bt_sw_enable,LV_STATE_CHECKED);else lv_obj_clear_state(s_ui->bluetooth_bt_sw_enable,LV_STATE_CHECKED);}
     char a[BT_ADDR_LEN],n[BT_NAME_LEN];uint8_t t=BLE_ADDR_TYPE_PUBLIC;
     if(s_ble_enabled&&load_last_device(a,n,&t)){
-        char b[64];if(s_is_connected&&strcmp(s_conn_addr,a)==0)snprintf(b,sizeof(b),"â %s",n);else snprintf(b,sizeof(b),"Last: %s",n);
+        char b[64];if(s_is_connected&&strcmp(s_conn_addr,a)==0)snprintf(b,sizeof(b),"\xE2\x97\x8F %s",n);else snprintf(b,sizeof(b),"Last: %s",n);
         lv_obj_t*btn=lv_list_add_btn(s_ui->bluetooth_bt_list_devices,LV_SYMBOL_BLUETOOTH,b);lv_obj_clear_flag(btn,LV_OBJ_FLAG_CLICKABLE);
         if(s_is_connected)lv_obj_set_style_text_color(btn,lv_color_hex(0x00e676),LV_PART_MAIN);
     }else{lv_obj_t*btn=lv_list_add_btn(s_ui->bluetooth_bt_list_devices,LV_SYMBOL_BLUETOOTH,s_ble_enabled?"Press Scan":"Enable BT first");lv_obj_clear_flag(btn,LV_OBJ_FLAG_CLICKABLE);}
@@ -198,7 +197,8 @@ const char* bluetooth_connected_addr(void){return s_conn_addr[0]?s_conn_addr:nul
 bool bluetooth_manager_write(const char* data) {
     if (!s_write_char || !s_is_connected) return false;
     s_rx_buf[0] = 0; s_rx_ready = false;
-    return s_write_char->writeValue(data);
+    s_write_char->writeValue(data);
+    return true;
 }
 
 bool bluetooth_manager_rx_ready(void) {

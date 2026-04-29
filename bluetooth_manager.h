@@ -1,7 +1,4 @@
-/* bluetooth_manager.h — BLE连接管理 (基础版)
- * 职责: 设备扫描、连接、断开、UI交互
- * 不处理OBD数据轮询 (由 obd_manager 负责)
- */
+/* bluetooth_manager.h — BLE连接管理 */
 #ifndef BLUETOOTH_MANAGER_H
 #define BLUETOOTH_MANAGER_H
 
@@ -11,11 +8,10 @@
 extern "C" {
 #endif
 
-/* 前置声明 lv_ui，避免包含 gui_guider.h */
-struct _lv_ui;
-typedef struct _lv_ui lv_ui;
+/* 注意: lv_ui 和 app_switch_cb_t 类型在 hybridhud.ino 中通过
+ * #include "src/gui_guider.h" 和 #include "setting_manager.h" 定义
+ * 本头文件不重新定义这些类型 */
 
-typedef void (*app_switch_cb_t)(lv_ui* ui, int screen_id, bool forward);
 typedef void (*bt_conn_cb_t)(bool connected);
 
 void bluetooth_manager_init(lv_ui* ui);

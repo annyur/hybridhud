@@ -132,7 +132,7 @@ static void update_time(void)
 {
     if (!s_ui || !s_ui->general_label_time) return;
     struct tm timeinfo;
-    rtc.getDateTime(&timeinfo);
+    rtc_getDateTime(&timeinfo);
     char buf[6];
     snprintf(buf, sizeof(buf), "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
     lv_label_set_text(s_ui->general_label_time, buf);
@@ -142,7 +142,7 @@ static void update_temp(void)
 {
     if (!s_ui || !s_ui->general_label_temp) return;
     float temp = 0.0f;
-    bool ok = qmi.getDataReady() && (temp = qmi.getTemperature_C(), true);
+    bool ok = true; temp = qmi_getTemperature();
     char buf[8];
     snprintf(buf, sizeof(buf), ok ? "%.1f" : "--.-", temp);
     lv_label_set_text(s_ui->general_label_temp, buf);

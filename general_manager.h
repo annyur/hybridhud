@@ -8,9 +8,7 @@
 extern "C" {
 #endif
 
-/* 前置声明 lv_ui，避免包含 gui_guider.h */
-struct _lv_ui;
-typedef struct _lv_ui lv_ui;
+/* lv_ui 类型在 hybridhud.ino 中通过 gui_guider.h 定义 */
 
 void general_manager_init(lv_ui *ui);
 void general_manager_enter(void);
